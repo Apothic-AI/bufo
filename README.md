@@ -4,6 +4,10 @@
 
 It provides one Textual-based control plane for agent prompting, persistent shell execution, session resume, settings, and local metadata persistence.
 
+<p align="center">
+  <img src="img/bufo-schematic.png" alt="Bufo schematic" width="500" />
+</p>
+
 > ⚠️ **Status:** Bufo is a new work in progress and is not yet ready for production use.
 > Contributions are very welcome.
 
