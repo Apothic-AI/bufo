@@ -20,6 +20,7 @@ It provides one Textual-based control plane for agent prompting, persistent shel
 - JSON-RPC transport + ACP bridge for process-based agents over stdio.
 - ACP session-scoped compatibility for strict servers: negotiated `sessionId` is reused for prompt/mode/cancel calls.
 - Bridge fail-fast behavior for startup/RPC calls when agent processes exit early or stop responding.
+- Startup/control ACP RPC timeout default increased to 30s to accommodate slower agent bootstraps.
 - ACP prompt payload shaping with text/resource blocks plus legacy fallback behavior.
 - ACP update normalization for both typed events and nested `sessionUpdate` payload variants (mode, commands, message chunks).
 - ACP-only launcher enforcement (non-ACP catalog entries are rejected with an explicit error).

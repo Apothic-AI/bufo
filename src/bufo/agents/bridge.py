@@ -14,6 +14,7 @@ from bufo.protocol.jsonrpc import JsonRpcConnection, JsonRpcFailure
 from bufo.runtime_logging import get_runtime_logger
 
 EventHandler = Callable[["AgentEvent"], Awaitable[None]]
+DEFAULT_CONTROL_RPC_TIMEOUT_S = 30.0
 
 
 @dataclass(slots=True)
@@ -111,12 +112,16 @@ class AcpAgentBridge:
         return await self._call(
             "initialize",
             {"client": {"name": client_name, "version": version}},
-            timeout=10.0,
+            timeout=DEFAULT_CONTROL_RPC_TIMEOUT_S,
         )
 
     async def new_session(self, *, cwd: Path) -> Any:
         self.logger.info("bridge.new_session", cwd=str(cwd))
-        result = await self._call("session/new", {"cwd": str(cwd)}, timeout=10.0)
+        result = await self._call(
+            "session/new",
+            {"cwd": str(cwd)},
+            timeout=DEFAULT_CONTROL_RPC_TIMEOUT_S,
+        )
         if isinstance(result, dict):
             session_id = result.get("sessionId")
             if isinstance(session_id, str) and session_id:
@@ -129,7 +134,7 @@ class AcpAgentBridge:
         result = await self._call(
             "session/load",
             {"sessionId": session_id, "cwd": str(cwd)},
-            timeout=10.0,
+            timeout=DEFAULT_CONTROL_RPC_TIMEOUT_S,
         )
         self.session_id = session_id
         return result
@@ -179,7 +184,11 @@ class AcpAgentBridge:
 
     async def cancel(self) -> Any:
         self.logger.info("bridge.cancel", session_id=self.session_id)
-        return await self._call("session/cancel", {"sessionId": self.session_id}, timeout=10.0)
+        return await self._call(
+            "session/cancel",
+            {"sessionId": self.session_id},
+            timeout=DEFAULT_CONTROL_RPC_TIMEOUT_S,
+        )
 
     async def _call(
         self,

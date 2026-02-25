@@ -66,6 +66,7 @@
   - Stabilized refresh ordering to avoid visual path shuffling/flicker on auto-refresh.
   - Scoped tree worker-group IDs per widget instance to avoid cross-session refresh worker collisions.
 - Added e2e regression test for expandable directory nodes and nested child placement.
+- Increased default ACP startup/control RPC timeout from 10s to 30s for slower agents.
 - Full automated suite currently passing: 51 tests total.
 
 ## In Progress

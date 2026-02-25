@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
-from bufo.agents.bridge import AcpAgentBridge
+from bufo.agents.bridge import DEFAULT_CONTROL_RPC_TIMEOUT_S, AcpAgentBridge
 
 
 async def _noop_event(_event: Any) -> None:  # noqa: ANN401
@@ -22,7 +22,11 @@ class AcpBridgeTests(unittest.IsolatedAsyncioTestCase):
         await bridge.new_session(cwd=Path("/tmp"))
 
         self.assertEqual(bridge.session_id, "sess-1")
-        bridge._call.assert_awaited_once_with("session/new", {"cwd": "/tmp"}, timeout=10.0)
+        bridge._call.assert_awaited_once_with(
+            "session/new",
+            {"cwd": "/tmp"},
+            timeout=DEFAULT_CONTROL_RPC_TIMEOUT_S,
+        )
 
     async def test_load_session_sets_active_session_id(self) -> None:
         bridge = AcpAgentBridge("agent --acp", Path.cwd(), _noop_event)
@@ -34,7 +38,7 @@ class AcpBridgeTests(unittest.IsolatedAsyncioTestCase):
         bridge._call.assert_awaited_once_with(
             "session/load",
             {"sessionId": "resume-123", "cwd": "/tmp"},
-            timeout=10.0,
+            timeout=DEFAULT_CONTROL_RPC_TIMEOUT_S,
         )
 
     async def test_prompt_payload_includes_session_id_and_blocks(self) -> None:
@@ -89,7 +93,7 @@ class AcpBridgeTests(unittest.IsolatedAsyncioTestCase):
         async def fake_call(method: str, params: dict[str, Any], timeout: float | None = None) -> dict[str, Any]:
             if method == "session/new":
                 self.assertEqual(params, {"cwd": "/tmp"})
-                self.assertEqual(timeout, 10.0)
+                self.assertEqual(timeout, DEFAULT_CONTROL_RPC_TIMEOUT_S)
                 return {"sessionId": "strict-session-1", "modes": []}
 
             if method == "session/prompt":
