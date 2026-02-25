@@ -218,6 +218,19 @@ class BufoApp(App[None]):
             self.logger.error("app.launch_agent.unknown_identity", agent_identity=agent_identity)
             return
 
+        if agent.protocol != "acp":
+            self.notify(
+                f"Agent '{agent.name}' uses protocol '{agent.protocol}'. Bufo currently supports ACP agents only.",
+                severity="error",
+            )
+            self.logger.warning(
+                "app.launch_agent.unsupported_protocol",
+                agent_identity=agent.identity,
+                agent_name=agent.name,
+                protocol=agent.protocol,
+            )
+            return
+
         platform_name = _platform_name()
         command = agent.command_for_platform(platform_name) or agent.command_for_platform("default")
 

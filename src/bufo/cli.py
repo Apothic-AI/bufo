@@ -9,7 +9,6 @@ import click
 
 from bufo.app import AcpCommandApp, BufoApp
 from bufo.paths import settings_path
-from bufo.runtime_logging import configure_runtime_logging
 from bufo.version import __version__
 
 
@@ -58,7 +57,6 @@ def run(
 ) -> None:
     """Run Bufo."""
     project_root = Path(project_dir).expanduser().resolve()
-    configure_runtime_logging(level=log_level, log_file=log_file)
 
     if serve:
         _serve_app(
@@ -114,7 +112,6 @@ def serve(
 ) -> None:
     """Serve Bufo via browser using textual-serve."""
     project_root = Path(project_dir).expanduser().resolve()
-    configure_runtime_logging(level=log_level, log_file=log_file)
     _serve_app(
         project_root,
         None,
@@ -154,7 +151,6 @@ def acp_command(
     log_file: Path | None,
 ) -> None:
     """Run a custom ACP command without catalog installation."""
-    configure_runtime_logging(level=log_level, log_file=log_file)
     app = AcpCommandApp(
         project_root=Path(project_dir).expanduser().resolve(),
         command=command,

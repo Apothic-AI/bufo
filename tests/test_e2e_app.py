@@ -12,6 +12,7 @@ from unittest.mock import patch
 from textual.widgets import Button, Input, OptionList, Tree
 
 from bufo.agents.bridge import AgentEvent
+from bufo.agents.schema import AgentDescriptor
 from bufo.app import BufoApp
 from bufo.messages import LaunchAgent, ResumeAgent
 from bufo.screens.modals import PermissionModal
@@ -215,6 +216,30 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(app.current_mode.startswith("session-"))
             self.assertEqual(len(app.session_tracker.all()), 1)
             self.assertTrue(any("Agent bridge connected" in line for line in conversation.timeline_entries))
+
+    async def test_unsupported_protocol_agent_is_rejected_without_launching_session(self) -> None:
+        app = self._make_app()
+        app.catalog = [
+            AgentDescriptor(
+                identity="mcp-only-agent",
+                name="MCP Agent",
+                protocol="mcp",
+                description="MCP-only test agent",
+                run_command={"default": "mcp-agent"},
+            )
+        ]
+        with patch.object(app, "notify") as notify_mock:
+            async with app.run_test() as pilot:
+                app.post_message(
+                    LaunchAgent(agent_identity="mcp-only-agent", project_root=self.project_root)
+                )
+                await pilot.pause(0.2)
+
+        self.assertEqual(len(app.session_tracker.all()), 0)
+        notify_mock.assert_called()
+        args, kwargs = notify_mock.call_args
+        self.assertIn("supports ACP agents only", args[0])
+        self.assertEqual(kwargs.get("severity"), "error")
 
     async def test_resume_reuses_existing_session_mode(self) -> None:
         app = self._make_app()

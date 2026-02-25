@@ -95,12 +95,12 @@ run_command = { default = "kimi --acp" }
 [[agents]]
 identity = "codex-cli"
 name = "Codex CLI"
-protocol = "acp"
+protocol = "mcp"
 category = "coding"
-description = "OpenAI Codex CLI"
-recommended = true
-launcher_default = true
-run_command = { default = "codex --acp" }
+description = "OpenAI Codex CLI MCP server (ACP not yet supported in Bufo)"
+recommended = false
+launcher_default = false
+run_command = { default = "codex mcp-server" }
 
 [[agents]]
 identity = "opencode"

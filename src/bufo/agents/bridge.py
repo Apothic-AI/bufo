@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import shlex
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -36,6 +37,9 @@ class AcpAgentBridge:
         self.process: asyncio.subprocess.Process | None = None
         self.connection: JsonRpcConnection | None = None
         self._reader_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
+        self._wait_task: asyncio.Task[None] | None = None
+        self._stderr_tail: deque[str] = deque(maxlen=8)
         self.session_id: str | None = None
         self.logger = get_runtime_logger()
 
@@ -68,7 +72,8 @@ class AcpAgentBridge:
         self.connection.register_method("terminal/wait_for_exit", self._on_terminal)
 
         self._reader_task = asyncio.create_task(self._read_stdout_loop())
-        asyncio.create_task(self._read_stderr_loop())
+        self._stderr_task = asyncio.create_task(self._read_stderr_loop())
+        self._wait_task = asyncio.create_task(self._watch_process_exit())
         self.logger.debug("bridge.started")
 
     async def stop(self) -> None:
@@ -82,6 +87,18 @@ class AcpAgentBridge:
                 await self._reader_task
             self._reader_task = None
 
+        if self._stderr_task is not None:
+            self._stderr_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._stderr_task
+            self._stderr_task = None
+
+        if self._wait_task is not None:
+            self._wait_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._wait_task
+            self._wait_task = None
+
         if self.process is not None and self.process.returncode is None:
             self.process.terminate()
             with contextlib.suppress(ProcessLookupError):
@@ -91,11 +108,15 @@ class AcpAgentBridge:
 
     async def initialize(self, client_name: str = "bufo", version: str = "0.0.1") -> Any:
         self.logger.debug("bridge.initialize", client_name=client_name, version=version)
-        return await self._call("initialize", {"client": {"name": client_name, "version": version}})
+        return await self._call(
+            "initialize",
+            {"client": {"name": client_name, "version": version}},
+            timeout=10.0,
+        )
 
     async def new_session(self, *, cwd: Path) -> Any:
         self.logger.info("bridge.new_session", cwd=str(cwd))
-        result = await self._call("session/new", {"cwd": str(cwd)})
+        result = await self._call("session/new", {"cwd": str(cwd)}, timeout=10.0)
         if isinstance(result, dict):
             session_id = result.get("sessionId")
             if isinstance(session_id, str) and session_id:
@@ -105,7 +126,11 @@ class AcpAgentBridge:
 
     async def load_session(self, *, session_id: str, cwd: Path) -> Any:
         self.logger.info("bridge.load_session", session_id=session_id, cwd=str(cwd))
-        result = await self._call("session/load", {"sessionId": session_id, "cwd": str(cwd)})
+        result = await self._call(
+            "session/load",
+            {"sessionId": session_id, "cwd": str(cwd)},
+            timeout=10.0,
+        )
         self.session_id = session_id
         return result
 
@@ -154,13 +179,30 @@ class AcpAgentBridge:
 
     async def cancel(self) -> Any:
         self.logger.info("bridge.cancel", session_id=self.session_id)
-        return await self._call("session/cancel", {"sessionId": self.session_id})
+        return await self._call("session/cancel", {"sessionId": self.session_id}, timeout=10.0)
 
-    async def _call(self, method: str, params: dict[str, Any]) -> Any:
+    async def _call(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        timeout: float | None = None,
+    ) -> Any:
         if self.connection is None:
             raise RuntimeError("Bridge not started")
+        self._raise_if_process_exited(method)
         self.logger.debug("bridge.rpc.call", method=method, session_id=self.session_id)
-        return await self.connection.call(method, params)
+        try:
+            return await self.connection.call(method, params, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            self._raise_if_process_exited(method)
+            raise TimeoutError(
+                f"Timed out waiting for ACP RPC response to '{method}' after {timeout:.1f}s."
+            ) from exc
+        except asyncio.CancelledError as exc:
+            if self.process is not None and self.process.returncode is not None:
+                raise RuntimeError(self._exit_message(method)) from exc
+            raise
 
     async def _read_stdout_loop(self) -> None:
         assert self.process is not None
@@ -169,6 +211,8 @@ class AcpAgentBridge:
             line = await self.process.stdout.readline()
             if not line:
                 self.logger.debug("bridge.stdout.closed", session_id=self.session_id)
+                if self.connection is not None:
+                    self.connection.shutdown()
                 break
             if self.connection is None:
                 continue
@@ -182,12 +226,40 @@ class AcpAgentBridge:
             if not line:
                 break
             self.logger.debug("bridge.stderr.line", session_id=self.session_id)
+            text = line.decode("utf-8", errors="replace")
+            self._stderr_tail.append(text.rstrip())
             await self.on_event(
                 AgentEvent(
                     type="agent/stderr",
-                    payload={"text": line.decode("utf-8", errors="replace")},
+                    payload={"text": text},
                 )
             )
+
+    async def _watch_process_exit(self) -> None:
+        assert self.process is not None
+        exit_code = await self.process.wait()
+        self.logger.warning(
+            "bridge.process.exited",
+            session_id=self.session_id,
+            exit_code=exit_code,
+            command=self.command,
+        )
+        if self.connection is not None:
+            self.connection.shutdown()
+
+    def _raise_if_process_exited(self, method: str) -> None:
+        if self.process is not None and self.process.returncode is not None:
+            raise RuntimeError(self._exit_message(method))
+
+    def _exit_message(self, method: str) -> str:
+        assert self.process is not None
+        snippet = ""
+        if self._stderr_tail:
+            snippet = f" Last stderr: {self._stderr_tail[-1]}"
+        return (
+            f"Agent process exited with code {self.process.returncode} while waiting for '{method}'."
+            f"{snippet}"
+        )
 
     async def _on_session_update(self, params: dict[str, Any] | list[Any] | None) -> dict[str, Any]:
         payload = params if isinstance(params, dict) else {"raw": params}

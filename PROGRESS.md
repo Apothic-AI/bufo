@@ -22,10 +22,10 @@
 - Fixed ACP session-scoped RPC compatibility for agents that require `sessionId` on prompt/mode/cancel calls (validated against `yolo-acp` in `../yolo-v2`).
 - Added test-ready app injection points (custom bridge factory, optional watcher disable, optional update-check disable) for deterministic runtime testing.
 - Added extensive end-to-end and integration coverage:
-  - 12 Textual app e2e tests (launcher, resume, settings/sessions modals, prompt/shell flows, permission flows, tool lifecycle rendering, session navigation).
+  - 22 Textual app e2e tests (launcher, resume, settings/sessions modals, prompt/shell flows, permission flows, tool lifecycle rendering, protocol-gating, session navigation, copy/selection, watcher refresh).
   - 6 CLI e2e/integration tests.
-  - 6 ACP session-update mapping tests.
-  - 4 ACP bridge session-payload tests (`sessionId` capture + prompt block shaping).
+  - 8 ACP session-update mapping tests.
+  - 7 ACP bridge tests (session payloads + strict-session regression + fail-fast process-exit behavior).
   - Existing 4 core persistence/protocol tests retained.
 - Added strict-session regression test to ensure `session/new` followed by prompt always sends `sessionId` (covers the real `yolo-acp` failure mode: `Missing or invalid sessionId`).
 - Updated `README.md` to reflect current CLI surface, ACP session-scoped compatibility behavior, and canonical test command.
@@ -50,7 +50,17 @@
   - Displayed agent `name` in the conversation header instead of internal `identity` (`__custom__` no longer shown as label).
   - Routed agent stderr to structured logs only (no stderr spam in the chat timeline).
 - Added regression tests covering nested ACP update parsing, custom agent name rendering, stderr timeline suppression, and yolo-style command/mode updates.
-- Full automated suite currently passing: 47 tests total.
+- Fixed launch freeze conditions for misconfigured/unsupported agent commands:
+  - ACP bridge now monitors subprocess exit and cancels pending RPC waits immediately.
+  - Startup/control RPCs use bounded timeouts and raise explicit errors when a process exits or fails to respond.
+  - Added stderr-tail context to bridge exit errors for faster diagnosis.
+- Added regression tests for early process-exit fail-fast behavior and cancelled-RPC exit handling.
+- Corrected catalog/protocol behavior for Codex CLI:
+  - Updated built-in descriptor to reflect MCP server mode (`protocol = "mcp"`, `codex mcp-server`).
+  - Enforced ACP-only launches in app runtime; non-ACP entries are rejected with a clear user-facing error.
+- Removed duplicate runtime logger initialization from CLI entrypoints (prevents duplicate `logging.configured` lines at startup).
+- Added e2e coverage for unsupported-protocol launch rejection.
+- Full automated suite currently passing: 50 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.
