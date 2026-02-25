@@ -10,6 +10,11 @@ from typing import Any, Iterable
 class RenderEvent:
     text: str
     state: str | None = None
+    markdown: bool = False
+    detail_id: str | None = None
+    detail_title: str | None = None
+    detail_body: str | None = None
+    detail_markdown: bool = False
 
 
 _STATE_VALUES = {"notready", "busy", "asking", "idle"}
@@ -91,7 +96,12 @@ def _map_typed_event(event_type: str, event: dict[str, Any], events: list[Render
     }:
         text = event.get("text") or event.get("response") or event.get("content")
         if text is not None:
-            events.append(RenderEvent(text=f"[green]Agent:[/green] {_compact(text)}"))
+            rendered = _compact(text)
+            if _looks_like_markdown(rendered):
+                events.append(RenderEvent(text="[green]Agent:[/green]"))
+                events.append(RenderEvent(text=rendered, markdown=True))
+            else:
+                events.append(RenderEvent(text=f"[green]Agent:[/green] {rendered}"))
         return
 
     if event_type in {"thought", "thought.delta", "reasoning", "reasoning.delta"}:
@@ -159,7 +169,40 @@ def _map_session_update(session_update: str, event: dict[str, Any], events: list
             or _extract_text(event.get("text"))
         )
         if text is not None:
-            events.append(RenderEvent(text=f"[green]Agent:[/green] {_compact(text)}"))
+            rendered = _compact(text)
+            if _looks_like_markdown(rendered):
+                events.append(RenderEvent(text="[green]Agent:[/green]"))
+                events.append(RenderEvent(text=rendered, markdown=True))
+            else:
+                events.append(RenderEvent(text=f"[green]Agent:[/green] {rendered}"))
+        return
+
+    if session_update in {"plan", "plan_update", "plan.updated"}:
+        plan_entries = event.get("entries") or event.get("items") or event.get("plan")
+        events.append(RenderEvent(text=f"[cyan]Plan:[/cyan] {_render_plan_entries(plan_entries)}"))
+        return
+
+    if session_update in {"tool_call", "tool_call_update", "tool.call"}:
+        tool_id = str(
+            event.get("toolCallId")
+            or event.get("tool_call_id")
+            or event.get("id")
+            or event.get("name")
+            or "tool-call"
+        )
+        title = str(event.get("title") or event.get("name") or event.get("kind") or "Tool call")
+        status = str(event.get("status") or "update")
+        detail = _extract_tool_detail(event)
+        summary = f"[magenta]Tool:[/magenta] {title} ({status}) [dim]id={tool_id}[/dim]"
+        events.append(
+            RenderEvent(
+                text=summary,
+                detail_id=tool_id,
+                detail_title=title,
+                detail_body=detail,
+                detail_markdown=_looks_like_markdown(detail) if detail else False,
+            )
+        )
         return
 
     if session_update in {"current_mode_update", "session_mode.updated", "mode.updated"}:
@@ -219,6 +262,25 @@ def _render_plan(plan: Any) -> str:
     return _compact(plan)
 
 
+def _render_plan_entries(plan: Any) -> str:
+    if isinstance(plan, list):
+        entries: list[str] = []
+        for item in plan:
+            if not isinstance(item, dict):
+                entries.append(_compact(item))
+                continue
+            content = _compact(item.get("content") or item.get("title") or item.get("step") or item)
+            status = str(item.get("status", "")).strip()
+            priority = str(item.get("priority", "")).strip()
+            prefixes = [value for value in [status, priority] if value]
+            if prefixes:
+                entries.append(f"[{', '.join(prefixes)}] {content}")
+            else:
+                entries.append(content)
+        return _render_sequence(entries)
+    return _render_plan(plan)
+
+
 def _render_sequence(values: Iterable[Any]) -> str:
     return " | ".join(_compact(value) for value in values)
 
@@ -258,6 +320,33 @@ def _extract_text(value: Any) -> str | None:
         if filtered:
             return "".join(filtered)
     return None
+
+
+def _extract_tool_detail(event: dict[str, Any]) -> str | None:
+    candidates = [
+        event.get("content"),
+        event.get("rawOutput"),
+        event.get("output"),
+        event.get("result"),
+        event.get("error"),
+    ]
+    for candidate in candidates:
+        text = _extract_text(candidate)
+        if text:
+            return text
+    return None
+
+
+def _looks_like_markdown(text: str) -> bool:
+    if not text:
+        return False
+    stripped = text.strip()
+    if "```" in stripped:
+        return True
+    return any(
+        stripped.startswith(prefix)
+        for prefix in ("# ", "## ", "- ", "* ", "1. ", "> ", "---")
+    )
 
 
 def _compact(value: Any) -> str:

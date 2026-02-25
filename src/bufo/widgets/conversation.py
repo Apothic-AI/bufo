@@ -7,6 +7,7 @@ import shlex
 from pathlib import Path
 from typing import Any, Callable
 
+from rich.markdown import Markdown
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Input, OptionList, Static
@@ -25,6 +26,10 @@ _DEFAULT_SLASH_COMMANDS = [
     "/help",
     "/clear",
     "/interrupt",
+    "/tool-list",
+    "/tool-expand",
+    "/tool-collapse",
+    "/tool-toggle",
     "/mode",
     "/mode agent",
     "/mode shell",
@@ -89,6 +94,8 @@ class Conversation(Vertical):
         self._prompt_history = [item.value for item in self.histories.prompt.read()]
         self._slash_commands: list[str] = list(_DEFAULT_SLASH_COMMANDS)
         self._visible_slash_commands: list[str] = []
+        self._tool_details: dict[str, dict[str, Any]] = {}
+        self._expanded_tool_details: set[str] = set()
         self.logger = get_runtime_logger()
         self.timeline_entries: list[str] = []
         super().__init__()
@@ -233,12 +240,36 @@ class Conversation(Vertical):
         self.logger.debug("conversation.prompt.slash", command=command, arg=arg, mode_name=self.mode_name)
 
         if command == "/help":
-            self._write_line("[b]/help[/b], [b]/clear[/b], [b]/mode <agent|shell>[/b], [b]/interrupt[/b]")
+            self._write_line(
+                "[b]/help[/b], [b]/clear[/b], [b]/interrupt[/b], "
+                "[b]/tool-list[/b], [b]/tool-expand <id>[/b], [b]/tool-collapse <id>[/b], [b]/tool-toggle <id>[/b], "
+                "[b]/mode <agent|shell>[/b]"
+            )
         elif command == "/clear":
             self.query_one("#timeline", SelectableRichLog).clear()
         elif command == "/interrupt":
             await self.shell.interrupt()
             self._write_line("[yellow]Interrupt sent to shell[/yellow]")
+        elif command == "/tool-list":
+            if not self._tool_details:
+                self._write_line("[dim]No tool details available yet.[/dim]")
+                return
+            items: list[str] = []
+            for tool_id in sorted(self._tool_details):
+                title = self._tool_details[tool_id]["title"]
+                state = "expanded" if tool_id in self._expanded_tool_details else "collapsed"
+                items.append(f"{tool_id} ({title}) [{state}]")
+            self._write_line("[magenta]Tool details:[/magenta] " + " | ".join(items))
+        elif command == "/tool-expand":
+            self._set_tool_detail_visibility(arg, expanded=True)
+        elif command == "/tool-collapse":
+            self._set_tool_detail_visibility(arg, expanded=False)
+        elif command == "/tool-toggle":
+            target = arg.strip()
+            if not target:
+                self._write_line("[yellow]Usage:[/yellow] /tool-toggle <tool-id>")
+                return
+            self._set_tool_detail_visibility(target, expanded=target not in self._expanded_tool_details)
         elif command == "/mode":
             self.settings.shell.default_mode = arg if arg in {"agent", "shell", "auto"} else "auto"
             self._write_line(f"[cyan]Prompt routing mode set to {self.settings.shell.default_mode}[/cyan]")
@@ -366,7 +397,7 @@ class Conversation(Vertical):
         self._update_slash_commands_from_payload(payload)
         events = normalize_session_update(payload)
         for event in events:
-            self._write_line(event.text)
+            self._render_event(event)
             if event.state is not None:
                 self._set_state(event.state)
 
@@ -377,9 +408,13 @@ class Conversation(Vertical):
         if hasattr(self.app, "session_tracker"):
             self.app.session_tracker.update_state(self.mode_name, state)  # type: ignore[attr-defined]
 
-    def _write_line(self, text: str) -> None:
+    def _write_line(self, text: str, *, markdown: bool = False) -> None:
         self.timeline_entries.append(text)
-        self.query_one("#timeline", SelectableRichLog).write(text)
+        timeline = self.query_one("#timeline", SelectableRichLog)
+        if markdown:
+            timeline.write(Markdown(text))
+        else:
+            timeline.write(text)
 
     def _refresh_slash_menu(self, value: str) -> None:
         text = value.strip()
@@ -469,6 +504,56 @@ class Conversation(Vertical):
                 mode_name=self.mode_name,
                 command_count=len(self._slash_commands),
             )
+
+    def _render_event(self, event: Any) -> None:  # noqa: ANN401
+        detail_id = getattr(event, "detail_id", None)
+        detail_body = getattr(event, "detail_body", None)
+        if detail_id and detail_body:
+            title = getattr(event, "detail_title", "") or "Tool"
+            detail_markdown = bool(getattr(event, "detail_markdown", False))
+            self._tool_details[detail_id] = {
+                "title": title,
+                "body": detail_body,
+                "markdown": detail_markdown,
+            }
+            expanded = detail_id in self._expanded_tool_details
+            hint = (
+                f"[dim](expanded; /tool-collapse {detail_id})[/dim]"
+                if expanded
+                else f"[dim](collapsed; /tool-expand {detail_id})[/dim]"
+            )
+            self._write_line(f"{event.text} {hint}")
+            if expanded:
+                self._write_tool_detail(detail_id)
+            return
+
+        self._write_line(event.text, markdown=bool(getattr(event, "markdown", False)))
+
+    def _set_tool_detail_visibility(self, tool_id: str, *, expanded: bool) -> None:
+        target = tool_id.strip()
+        if not target:
+            self._write_line("[yellow]Usage:[/yellow] /tool-expand <tool-id>")
+            return
+        if target not in self._tool_details:
+            self._write_line(f"[yellow]Unknown tool id:[/yellow] {target}")
+            return
+
+        if expanded:
+            self._expanded_tool_details.add(target)
+            self._write_line(f"[magenta]Tool details expanded:[/magenta] {target}")
+            self._write_tool_detail(target)
+        else:
+            self._expanded_tool_details.discard(target)
+            self._write_line(f"[magenta]Tool details collapsed:[/magenta] {target}")
+
+    def _write_tool_detail(self, tool_id: str) -> None:
+        detail = self._tool_details.get(tool_id)
+        if detail is None:
+            return
+        title = detail["title"]
+        body = str(detail["body"])
+        self._write_line(f"[dim]Details ({tool_id}) {title}[/dim]")
+        self._write_line(body, markdown=bool(detail["markdown"]))
 
     async def _ask_permission(self, title: str, detail: str) -> str:
         loop = asyncio.get_running_loop()

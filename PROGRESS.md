@@ -67,7 +67,12 @@
   - Scoped tree worker-group IDs per widget instance to avoid cross-session refresh worker collisions.
 - Added e2e regression test for expandable directory nodes and nested child placement.
 - Increased default ACP startup/control RPC timeout from 10s to 30s for slower agents.
-- Full automated suite currently passing: 51 tests total.
+- Improved conversation rendering quality for provider session updates:
+  - Added normalized parsing for `sessionUpdate=plan`, `tool_call`, and `tool_call_update`.
+  - Added markdown rendering support for message/detail blocks (including fenced code).
+  - Added collapsed-by-default tool detail handling with slash-command expansion/collapse controls.
+- Added regression tests for plan/tool-call normalization and collapsed/expandable tool details in the UI.
+- Full automated suite currently passing: 54 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.

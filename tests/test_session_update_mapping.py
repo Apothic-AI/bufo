@@ -125,6 +125,45 @@ class SessionUpdateMappingTests(unittest.TestCase):
         self.assertIn("/agent:mode", command_events[0].text)
         self.assertIn("/agent:memory", command_events[0].text)
 
+    def test_maps_session_plan_entries(self) -> None:
+        events = normalize_session_update(
+            {
+                "sessionId": "abc",
+                "update": {
+                    "sessionUpdate": "plan",
+                    "entries": [
+                        {"content": "Get CPU information", "priority": "high", "status": "in_progress"},
+                    ],
+                },
+            }
+        )
+        self.assertIn("Plan", events[0].text)
+        self.assertIn("Get CPU information", events[0].text)
+        self.assertIn("in_progress", events[0].text)
+
+    def test_maps_tool_call_details_as_collapsible_event(self) -> None:
+        events = normalize_session_update(
+            {
+                "sessionId": "abc",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-1",
+                    "title": "Execute generated Python script",
+                    "status": "pending",
+                    "content": [
+                        {
+                            "type": "content",
+                            "content": {"type": "text", "text": "```python\nprint('hello')\n```"},
+                        }
+                    ],
+                },
+            }
+        )
+        self.assertIn("Tool:", events[0].text)
+        self.assertEqual(events[0].detail_id, "tool-1")
+        self.assertIn("print('hello')", events[0].detail_body or "")
+        self.assertTrue(events[0].detail_markdown)
+
 
 if __name__ == "__main__":
     unittest.main()

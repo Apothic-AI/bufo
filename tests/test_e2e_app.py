@@ -462,6 +462,44 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(warning_mock.call_args.args[1], "conversation.agent_stderr")
             self.assertEqual(warning_mock.call_args.kwargs["message"], "noisy stderr line")
 
+    async def test_tool_call_details_are_collapsed_then_expandable(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            await conversation._on_agent_event(  # noqa: SLF001
+                AgentEvent(
+                    type="session/update",
+                    payload={
+                        "sessionId": "sid-1",
+                        "update": {
+                            "sessionUpdate": "tool_call",
+                            "toolCallId": "script-abc",
+                            "title": "Execute generated Python script",
+                            "status": "pending",
+                            "content": [
+                                {
+                                    "type": "content",
+                                    "content": {
+                                        "type": "text",
+                                        "text": "```python\nprint('hello')\n```",
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                )
+            )
+
+            collapsed_lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("Tool:", collapsed_lines)
+            self.assertIn("/tool-expand script-abc", collapsed_lines)
+            self.assertNotIn("print('hello')", collapsed_lines)
+
+            await conversation._handle_slash("/tool-expand script-abc")  # noqa: SLF001
+            expanded_lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("Tool details expanded:", expanded_lines)
+            self.assertIn("print('hello')", expanded_lines)
+
     async def test_selection_copy_helper_copies_and_notifies(self) -> None:
         app = self._make_app()
         async with app.run_test() as pilot:

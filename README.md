@@ -23,7 +23,10 @@ It provides one Textual-based control plane for agent prompting, persistent shel
 - Startup/control ACP RPC timeout default increased to 30s to accommodate slower agent bootstraps.
 - ACP prompt payload shaping with text/resource blocks plus legacy fallback behavior.
 - ACP update normalization for both typed events and nested `sessionUpdate` payload variants (mode, commands, message chunks).
+- Session-update rendering for `plan` and `tool_call` payloads with cleaner summaries and preserved detail metadata.
 - ACP-only launcher enforcement (non-ACP catalog entries are rejected with an explicit error).
+- Markdown rendering for message/detail blocks (including fenced code blocks).
+- Tool call detail payloads are collapsed by default and can be expanded via slash commands.
 - Permission modal workflow, diff rendering helpers, command risk analysis.
 - Project-scoped prompt/shell histories and XDG-based config/state/data layout.
 - Project tree panel with hierarchical expandable directories + watchdog-driven auto refresh.
@@ -79,7 +82,7 @@ bufo acp \
 uv run python -m unittest discover -s tests -v
 ```
 
-The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (51 tests).
+The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (54 tests).
 
 ## Notes
 
