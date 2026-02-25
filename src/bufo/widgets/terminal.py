@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Label, RichLog
+from textual.widgets import Label
+
+from bufo.widgets.selectable_rich_log import SelectableRichLog
 
 
 class TerminalPane(Vertical):
@@ -21,7 +23,7 @@ class TerminalPane(Vertical):
         padding: 0 1;
     }
 
-    TerminalPane > RichLog {
+    TerminalPane > SelectableRichLog {
         height: auto;
         max-height: 20;
         overflow-y: auto;
@@ -34,7 +36,7 @@ class TerminalPane(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Label(self.title)
-        yield RichLog(id="terminal-log", wrap=True, markup=False, highlight=False)
+        yield SelectableRichLog(id="terminal-log", wrap=True, markup=False, highlight=False)
 
     def write(self, text: str) -> None:
-        self.query_one("#terminal-log", RichLog).write(text.rstrip())
+        self.query_one("#terminal-log", SelectableRichLog).write(text.rstrip())

@@ -19,6 +19,7 @@ from bufo.screens.sessions import SessionsScreen
 from bufo.screens.settings import SettingsScreen
 from bufo.screens.store import StoreScreen
 from bufo.widgets.conversation import Conversation
+from bufo.widgets.selectable_rich_log import SelectableRichLog
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"pathspec.*")
@@ -364,6 +365,19 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(app._copy_selected_text_with_notification())  # noqa: SLF001
             self.assertEqual(app.clipboard, "copied text")
             notify_mock.assert_called_once()
+
+    async def test_timeline_exposes_selection_offsets_for_mouse_drag(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            timeline = conversation.query_one("#timeline", SelectableRichLog)
+            geometry = app.screen.find_widget(timeline)
+            widget, offset = app.screen.get_widget_and_offset_at(
+                geometry.region.x + 1,
+                geometry.region.y + 1,
+            )
+            self.assertIs(widget, timeline)
+            self.assertIsNotNone(offset)
 
     async def test_project_tree_auto_refreshes_when_watch_event_fires(self) -> None:
         watch_manager = FakeWatchManager()

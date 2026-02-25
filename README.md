@@ -20,7 +20,7 @@ It provides one Textual-based control plane for agent prompting, persistent shel
 - Project-scoped prompt/shell histories and XDG-based config/state/data layout.
 - Project tree panel with scanner + watchdog-driven auto refresh.
 - Session strip with per-session chat tabs and quick "New Session" entry.
-- Selection auto-copy with in-app clipboard notification.
+- Drag-selection in logs with auto-copy and in-app clipboard notification.
 - Structured JSONL runtime logging with CLI/env level gating.
 
 ## CLI
@@ -70,7 +70,7 @@ bufo acp \
 uv run python -m unittest discover -s tests -v
 ```
 
-The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (39 tests).
+The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (40 tests).
 
 ## Notes
 

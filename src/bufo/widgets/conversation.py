@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Input, OptionList, RichLog, Static
+from textual.widgets import Input, OptionList, Static
 
 from bufo.agents.bridge import AcpAgentBridge, AgentEvent
 from bufo.agents.session_updates import normalize_session_update
@@ -19,6 +19,7 @@ from bufo.prompt_resources import expand_prompt_resources
 from bufo.runtime_logging import get_runtime_logger
 from bufo.shell.persistent import PersistentShell
 from bufo.shell.safety import classify_command
+from bufo.widgets.selectable_rich_log import SelectableRichLog
 
 _DEFAULT_SLASH_COMMANDS = [
     "/help",
@@ -91,7 +92,7 @@ class Conversation(Vertical):
         super().__init__()
 
     def compose(self) -> ComposeResult:
-        yield RichLog(id="timeline", wrap=True, markup=True, highlight=False)
+        yield SelectableRichLog(id="timeline", wrap=True, markup=True, highlight=False)
         yield Static("idle", id="status")
         yield Input(placeholder="Prompt, slash command, or shell command (!cmd)", id="prompt")
         yield OptionList(id="slash-menu", classes="hidden")
@@ -230,7 +231,7 @@ class Conversation(Vertical):
         if command == "/help":
             self._write_line("[b]/help[/b], [b]/clear[/b], [b]/mode <agent|shell>[/b], [b]/interrupt[/b]")
         elif command == "/clear":
-            self.query_one("#timeline", RichLog).clear()
+            self.query_one("#timeline", SelectableRichLog).clear()
         elif command == "/interrupt":
             await self.shell.interrupt()
             self._write_line("[yellow]Interrupt sent to shell[/yellow]")
@@ -367,7 +368,7 @@ class Conversation(Vertical):
 
     def _write_line(self, text: str) -> None:
         self.timeline_entries.append(text)
-        self.query_one("#timeline", RichLog).write(text)
+        self.query_one("#timeline", SelectableRichLog).write(text)
 
     def _refresh_slash_menu(self, value: str) -> None:
         text = value.strip()

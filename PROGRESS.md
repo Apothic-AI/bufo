@@ -39,7 +39,9 @@
 - Added/expanded tests for those behaviors:
   - New e2e coverage for slash popup, session tabs/new-session flow, selection copy helper, and watcher-triggered tree refresh.
   - New runtime logging tests for JSONL output + env/flag configuration.
-- Full automated suite currently passing: 39 tests total.
+- Fixed drag-selection in conversation/terminal logs by introducing a selectable RichLog wrapper that emits selection offsets and supports selected-text extraction/highlighting.
+- Added regression coverage ensuring timeline logs expose mouse selection offsets (guards clipboard auto-copy behavior).
+- Full automated suite currently passing: 40 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.
