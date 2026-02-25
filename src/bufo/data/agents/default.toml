@@ -1,0 +1,148 @@
+[[agents]]
+identity = "ampcode"
+name = "AmpCode"
+protocol = "acp"
+category = "coding"
+description = "AmpCode ACP adapter"
+recommended = false
+launcher_default = false
+run_command = { default = "amp --acp" }
+
+[[agents.actions]]
+name = "install"
+description = "Install AmpCode"
+commands = { default = "npm install -g @ampcode/cli" }
+
+[[agents]]
+identity = "auggie"
+name = "Auggie"
+protocol = "acp"
+category = "coding"
+description = "Augment Code CLI"
+recommended = false
+run_command = { default = "auggie --acp" }
+
+[[agents]]
+identity = "claude-code"
+name = "Claude Code"
+protocol = "acp"
+category = "coding"
+description = "Anthropic Claude Code CLI"
+recommended = true
+launcher_default = true
+run_command = { default = "claude --acp" }
+
+[[agents.actions]]
+name = "login"
+description = "Authenticate Claude"
+commands = { default = "claude auth login" }
+
+[[agents]]
+identity = "copilot-cli"
+name = "GitHub Copilot CLI"
+protocol = "acp"
+category = "coding"
+description = "GitHub Copilot terminal agent"
+recommended = true
+run_command = { default = "github-copilot --acp" }
+
+[[agents]]
+identity = "docker-cagent"
+name = "Docker cagent"
+protocol = "acp"
+category = "coding"
+description = "Containerized ACP agent"
+recommended = false
+run_command = { default = "docker run --rm -it cagent" }
+
+[[agents]]
+identity = "gemini-cli"
+name = "Gemini CLI"
+protocol = "acp"
+category = "coding"
+description = "Google Gemini terminal agent"
+recommended = true
+launcher_default = true
+run_command = { default = "gemini --acp" }
+
+[[agents]]
+identity = "goose"
+name = "Goose"
+protocol = "acp"
+category = "coding"
+description = "Goose agent runtime"
+recommended = false
+run_command = { default = "goose agent --acp" }
+
+[[agents]]
+identity = "huggingface-inference"
+name = "Hugging Face Inference Providers"
+protocol = "acp"
+category = "providers"
+description = "Hugging Face provider-backed ACP endpoint"
+recommended = false
+run_command = { default = "hf-acp" }
+
+[[agents]]
+identity = "kimi-cli"
+name = "Kimi CLI"
+protocol = "acp"
+category = "coding"
+description = "Moonshot Kimi CLI"
+recommended = false
+run_command = { default = "kimi --acp" }
+
+[[agents]]
+identity = "codex-cli"
+name = "Codex CLI"
+protocol = "acp"
+category = "coding"
+description = "OpenAI Codex CLI"
+recommended = true
+launcher_default = true
+run_command = { default = "codex --acp" }
+
+[[agents]]
+identity = "opencode"
+name = "OpenCode"
+protocol = "acp"
+category = "coding"
+description = "OpenCode agent"
+recommended = false
+run_command = { default = "opencode --acp" }
+
+[[agents]]
+identity = "openhands"
+name = "OpenHands"
+protocol = "acp"
+category = "coding"
+description = "OpenHands local runtime"
+recommended = true
+run_command = { default = "openhands --acp" }
+
+[[agents]]
+identity = "stakpak-agent"
+name = "Stakpak Agent"
+protocol = "acp"
+category = "coding"
+description = "Stakpak terminal agent"
+recommended = false
+run_command = { default = "stakpak-agent --acp" }
+
+[[agents]]
+identity = "mistral-vibe"
+name = "Mistral Vibe"
+protocol = "acp"
+category = "coding"
+description = "Mistral Vibe CLI"
+recommended = false
+run_command = { default = "mistral-vibe --acp" }
+
+[[agents]]
+identity = "vt-code"
+name = "VT Code"
+protocol = "acp"
+category = "coding"
+description = "VT Code command-line agent"
+recommended = false
+run_command = { default = "vt-code --acp" }
