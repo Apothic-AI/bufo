@@ -45,11 +45,18 @@ class StoreScreen(Screen):
     }
     """
 
-    def __init__(self, *, agents: list[AgentDescriptor], recent_sessions: list[SessionRecord], project_root: Path) -> None:
+    def __init__(
+        self,
+        *,
+        agents: list[AgentDescriptor],
+        recent_sessions: list[SessionRecord],
+        project_root: Path,
+        id: str | None = None,
+    ) -> None:
         self.agents = agents
         self.recent_sessions = recent_sessions
         self.project_root = project_root
-        super().__init__()
+        super().__init__(id=id)
 
     def compose(self) -> ComposeResult:
         yield Static("[b]Bufo Agent Store[/b]", markup=True)
@@ -73,7 +80,6 @@ class StoreScreen(Screen):
                             f"{session.agent_name} | {session.title} | {session.last_used_at}",
                             markup=False,
                         ),
-                        id=f"{session.agent_identity}::{session.agent_session_id or ''}::{session.id}",
                     )
                     for session in self.recent_sessions
                 ]
@@ -152,7 +158,6 @@ class StoreScreen(Screen):
                         f"{session.agent_name} | {session.title} | {session.last_used_at}",
                         markup=False,
                     ),
-                    id=f"{session.agent_identity}::{session.agent_session_id or ''}::{session.id}",
                 )
                 for session in sessions
             ]

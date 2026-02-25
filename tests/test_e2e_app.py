@@ -1,0 +1,334 @@
+from __future__ import annotations
+
+import asyncio
+import tempfile
+import unittest
+import warnings
+from pathlib import Path
+from typing import Any
+
+from textual.widgets import Button, Input
+
+from bufo.agents.bridge import AgentEvent
+from bufo.app import BufoApp
+from bufo.messages import LaunchAgent, ResumeAgent
+from bufo.screens.modals import PermissionModal
+from bufo.screens.sessions import SessionsScreen
+from bufo.screens.settings import SettingsScreen
+from bufo.widgets.conversation import Conversation
+
+warnings.filterwarnings("ignore", category=ResourceWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"pathspec.*")
+
+
+class FakeBridge:
+    instances: list["FakeBridge"] = []
+
+    def __init__(self, command: str, cwd: Path, on_event) -> None:  # noqa: ANN001
+        self.command = command
+        self.cwd = cwd
+        self.on_event = on_event
+        self.prompts: list[tuple[str, list[dict[str, Any]]]] = []
+        self.modes: list[str] = []
+        self.started = False
+        self.stopped = False
+        FakeBridge.instances.append(self)
+
+    async def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+    async def initialize(self, client_name: str = "bufo", version: str = "0.0.1") -> dict[str, Any]:
+        return {"ok": True, "client": client_name, "version": version}
+
+    async def new_session(self, *, cwd: Path) -> dict[str, Any]:
+        await self.on_event(
+            AgentEvent(
+                type="session/update",
+                payload={
+                    "events": [
+                        {"type": "mode.updated", "mode": "agent"},
+                        {"type": "slash_commands.updated", "commands": ["/help", "/clear"]},
+                        {"type": "session.state", "state": "idle"},
+                    ]
+                },
+            )
+        )
+        return {"ok": True, "cwd": str(cwd)}
+
+    async def load_session(self, *, session_id: str, cwd: Path) -> dict[str, Any]:
+        await self.on_event(
+            AgentEvent(
+                type="session/update",
+                payload={
+                    "events": [
+                        {
+                            "type": "response.completed",
+                            "text": f"resumed {session_id}",
+                        },
+                        {"type": "session.state", "state": "idle"},
+                    ]
+                },
+            )
+        )
+        return {"ok": True, "sessionId": session_id, "cwd": str(cwd)}
+
+    async def prompt(self, text: str, resources: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        resources = resources or []
+        self.prompts.append((text, resources))
+
+        if "ask-permission" in text:
+            await self.on_event(
+                AgentEvent(
+                    type="permission/request",
+                    payload={"message": "approve file write?", "kind": "write"},
+                )
+            )
+
+        if "lifecycle" in text:
+            await self.on_event(
+                AgentEvent(
+                    type="session/update",
+                    payload={
+                        "events": [
+                            {"type": "session.state", "state": "busy"},
+                            {"type": "tool_call.started", "name": "build", "id": "t1"},
+                            {"type": "tool_call.delta", "name": "build", "delta": "50%"},
+                            {"type": "tool_call.completed", "name": "build", "output": "ok"},
+                            {"type": "response.completed", "text": "done"},
+                            {"type": "session.state", "state": "idle"},
+                        ]
+                    },
+                )
+            )
+        else:
+            await self.on_event(
+                AgentEvent(
+                    type="session/update",
+                    payload={
+                        "events": [
+                            {"type": "session.state", "state": "busy"},
+                            {"type": "response.chunk", "text": "chunk-1"},
+                            {"type": "thought", "text": "thinking"},
+                            {"type": "plan.updated", "items": ["a", "b"]},
+                            {
+                                "type": "response.completed",
+                                "text": f"echo:{text}",
+                            },
+                            {"type": "session.state", "state": "idle"},
+                        ]
+                    },
+                )
+            )
+
+        return {"ok": True}
+
+    async def set_mode(self, mode: str) -> dict[str, Any]:
+        self.modes.append(mode)
+        return {"ok": True, "mode": mode}
+
+    async def cancel(self) -> dict[str, Any]:
+        return {"ok": True}
+
+
+class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        FakeBridge.instances.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.project_root = Path(self.tmp.name)
+        (self.project_root / "note.txt").write_text("hello resource", encoding="utf-8")
+
+    async def asyncTearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _make_app(self, **kwargs: Any) -> BufoApp:
+        return BufoApp(
+            project_root=self.project_root,
+            force_store=True,
+            bridge_factory=FakeBridge,
+            enable_watchers=False,
+            check_updates=False,
+            **kwargs,
+        )
+
+    async def _launch_first_agent(self, app: BufoApp, pilot, resume_id: str | None = None) -> Conversation:  # noqa: ANN001
+        identity = app.catalog[0].identity
+        if resume_id is None:
+            app.post_message(LaunchAgent(agent_identity=identity, project_root=self.project_root))
+        else:
+            app.post_message(
+                ResumeAgent(
+                    agent_identity=identity,
+                    agent_session_id=resume_id,
+                    project_root=self.project_root,
+                )
+            )
+        await pilot.pause(0.25)
+        return app.screen.query_one(Conversation)
+
+    async def _submit_prompt(self, conversation: Conversation, text: str, pilot) -> None:  # noqa: ANN001
+        prompt = conversation.query_one("#prompt", Input)
+        prompt.value = text
+        await prompt.action_submit()
+        await pilot.pause(0.25)
+
+    async def _press_permission(self, app: BufoApp, button_id: str, pilot) -> None:  # noqa: ANN001
+        for _ in range(25):
+            if isinstance(app.screen, PermissionModal):
+                app.screen.dismiss(button_id)
+                await asyncio.sleep(0.1)
+                return
+            await asyncio.sleep(0.05)
+        raise AssertionError(f"Permission modal button {button_id} not found")
+
+    async def test_store_to_session_launch_flow(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            self.assertTrue(app.current_mode.startswith("session-"))
+            self.assertEqual(len(app.session_tracker.all()), 1)
+            self.assertTrue(any("Agent bridge connected" in line for line in conversation.timeline_entries))
+
+    async def test_resume_reuses_existing_session_mode(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot, resume_id="abc-123")
+            self.assertEqual(len(app.session_tracker.all()), 1)
+            initial_mode = app.current_mode
+
+            app.post_message(
+                ResumeAgent(
+                    agent_identity=app.catalog[0].identity,
+                    agent_session_id="abc-123",
+                    project_root=self.project_root,
+                )
+            )
+            await pilot.pause(0.2)
+
+            self.assertEqual(len(app.session_tracker.all()), 1)
+            self.assertEqual(app.current_mode, initial_mode)
+
+    async def test_open_settings_modal(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            app.action_open_settings()
+            await pilot.pause(0.1)
+            self.assertIsInstance(app.screen, SettingsScreen)
+            app.screen.query_one("#close", Button).press()
+            await pilot.pause(0.1)
+
+    async def test_open_sessions_modal(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot)
+            app.action_open_sessions()
+            await pilot.pause(0.1)
+            self.assertIsInstance(app.screen, SessionsScreen)
+            app.screen.query_one("#close", Button).press()
+            await pilot.pause(0.1)
+
+    async def test_prompt_agent_flow_renders_response_thought_plan(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            await self._submit_prompt(conversation, "hello", pilot)
+
+            lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("chunk-1", lines)
+            self.assertIn("Thought", lines)
+            self.assertIn("Plan", lines)
+            self.assertIn("state -> idle", lines)
+
+    async def test_prompt_resource_attachment_is_passed_to_bridge(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            await self._submit_prompt(conversation, "please read @note.txt", pilot)
+
+            bridge = FakeBridge.instances[-1]
+            _, resources = bridge.prompts[-1]
+            self.assertEqual(len(resources), 1)
+            self.assertEqual(resources[0]["path"], "note.txt")
+            self.assertEqual(resources[0]["type"], "text")
+
+    async def test_slash_mode_updates_settings_and_bridge(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            await self._submit_prompt(conversation, "/mode shell", pilot)
+
+            bridge = FakeBridge.instances[-1]
+            self.assertEqual(app.settings.shell.default_mode, "shell")
+            self.assertIn("shell", bridge.modes)
+
+    async def test_shell_command_runs_end_to_end(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            await self._submit_prompt(conversation, "!echo bufo-e2e", pilot)
+
+            lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("bufo-e2e", lines)
+
+    async def test_shell_dangerous_command_rejected_via_permission_modal(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            submit_task = asyncio.create_task(conversation._handle_shell("rm -rf tmp"))  # noqa: SLF001
+            await asyncio.sleep(0.1)
+            await self._press_permission(app, "reject_once", pilot)
+            await asyncio.wait_for(submit_task, timeout=2)
+
+            lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("Command rejected", lines)
+
+    async def test_agent_permission_modal_flow(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            submit_task = asyncio.create_task(conversation._handle_agent_prompt("ask-permission"))  # noqa: SLF001
+            await asyncio.sleep(0.1)
+            await self._press_permission(app, "allow_once", pilot)
+            await asyncio.wait_for(submit_task, timeout=2)
+
+            lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("Permission decision:", lines)
+            self.assertIn("allow_once", lines)
+
+    async def test_tool_lifecycle_updates_render(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            await self._submit_prompt(conversation, "lifecycle", pilot)
+
+            lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("Tool", lines)
+            self.assertIn("build", lines)
+            self.assertIn("started", lines)
+            self.assertIn("completed", lines)
+
+    async def test_session_navigation_next_prev(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot)
+            first_mode = app.current_mode
+
+            second_identity = app.catalog[1].identity
+            app.post_message(LaunchAgent(agent_identity=second_identity, project_root=self.project_root))
+            await pilot.pause(0.25)
+            second_mode = app.current_mode
+            self.assertNotEqual(first_mode, second_mode)
+
+            app.action_prev_session()
+            await pilot.pause(0.1)
+            self.assertEqual(app.current_mode, first_mode)
+
+            app.action_next_session()
+            await pilot.pause(0.1)
+            self.assertEqual(app.current_mode, second_mode)
+
+
+if __name__ == "__main__":
+    unittest.main()

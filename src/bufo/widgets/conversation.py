@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import shlex
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Input, RichLog, Static
 
 from bufo.agents.bridge import AcpAgentBridge, AgentEvent
+from bufo.agents.session_updates import normalize_session_update
 from bufo.config.models import AppSettings
 from bufo.persistence.history import ProjectHistories
 from bufo.prompt_resources import expand_prompt_resources
@@ -46,6 +47,7 @@ class Conversation(Vertical):
         agent_command: str | None,
         resume_session_id: str | None = None,
         mode_name: str,
+        bridge_factory: Callable[[str, Path, Any], Any] | None = None,
     ) -> None:
         self.project_root = project_root
         self.settings = settings
@@ -53,6 +55,7 @@ class Conversation(Vertical):
         self.agent_command = agent_command
         self.resume_session_id = resume_session_id
         self.mode_name = mode_name
+        self.bridge_factory = bridge_factory or AcpAgentBridge
 
         self.histories = ProjectHistories(project_root)
         self.shell = PersistentShell(settings.shell.shell_program, project_root)
@@ -60,6 +63,7 @@ class Conversation(Vertical):
         self._busy = False
         self._history_cursor = 0
         self._prompt_history = [item.value for item in self.histories.prompt.read()]
+        self.timeline_entries: list[str] = []
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -74,7 +78,7 @@ class Conversation(Vertical):
         self._write_line(f"[dim]Agent:[/dim] {self.agent_identity}")
 
         if self.agent_command:
-            self.bridge = AcpAgentBridge(
+            self.bridge = self.bridge_factory(
                 self.agent_command,
                 self.project_root,
                 self._on_agent_event,
@@ -253,18 +257,11 @@ class Conversation(Vertical):
         self._write_line(f"[dim]{event.type}: {event.payload}[/dim]")
 
     def _render_session_update(self, payload: dict[str, Any]) -> None:
-        if "response" in payload:
-            self._write_line(f"[green]Agent:[/green] {payload['response']}")
-        if "chunk" in payload:
-            self._write_line(str(payload["chunk"]))
-        if "thought" in payload:
-            self._write_line(f"[dim]Thought:[/dim] {payload['thought']}")
-        if "plan" in payload:
-            self._write_line(f"[cyan]Plan:[/cyan] {payload['plan']}")
-        if "tool_call" in payload:
-            self._write_line(f"[magenta]Tool:[/magenta] {payload['tool_call']}")
-        if payload.get("state") in {"notready", "busy", "asking", "idle"}:
-            self._set_state(str(payload["state"]))
+        events = normalize_session_update(payload)
+        for event in events:
+            self._write_line(event.text)
+            if event.state is not None:
+                self._set_state(event.state)
 
     def _set_state(self, state: str) -> None:
         self._busy = state != "idle"
@@ -273,6 +270,7 @@ class Conversation(Vertical):
             self.app.session_tracker.update_state(self.mode_name, state)  # type: ignore[attr-defined]
 
     def _write_line(self, text: str) -> None:
+        self.timeline_entries.append(text)
         self.query_one("#timeline", RichLog).write(text)
 
     async def _ask_permission(self, title: str, detail: str) -> str:

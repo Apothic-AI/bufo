@@ -75,3 +75,16 @@ class WatchManager:
     def close(self) -> None:
         self._observer.stop()
         self._observer.join(timeout=2)
+
+
+class NullWatchManager:
+    """No-op watcher for tests and restricted environments."""
+
+    def watch(self, path: Path, callback: Callable[[], None]) -> None:  # noqa: ARG002
+        return
+
+    def unwatch(self, path: Path) -> None:  # noqa: ARG002
+        return
+
+    def close(self) -> None:
+        return

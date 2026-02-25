@@ -29,13 +29,13 @@ class PermissionModal(ModalScreen[str]):
     """
 
     def __init__(self, title: str, detail: str) -> None:
-        self.title = title
-        self.detail = detail
         super().__init__()
+        self.permission_title = title
+        self.detail = detail
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static(f"[b]{self.title}[/b]\n\n{self.detail}", markup=True)
+            yield Static(f"[b]{self.permission_title}[/b]\n\n{self.detail}", markup=True)
             yield Button("Allow Once", id="allow_once", variant="success")
             yield Button("Reject Once", id="reject_once", variant="error")
             yield Button("Allow Always", id="allow_always")
@@ -67,13 +67,13 @@ class DiffModal(ModalScreen[None]):
     """
 
     def __init__(self, title: str, diff_text: str) -> None:
-        self.title = title
-        self.diff_text = diff_text
         super().__init__()
+        self.diff_title = title
+        self.diff_text = diff_text
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static(f"[b]{self.title}[/b]", markup=True)
+            yield Static(f"[b]{self.diff_title}[/b]", markup=True)
             yield Static(self.diff_text)
             yield Button("Close", id="close", variant="primary")
 

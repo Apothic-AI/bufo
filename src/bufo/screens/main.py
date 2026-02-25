@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Callable
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -57,6 +58,7 @@ class MainScreen(Screen):
         agent: AgentDescriptor,
         resume_session_id: str | None = None,
         watch_manager: WatchManager | None = None,
+        bridge_factory: Callable[[str, Path, Any], Any] | None = None,
     ) -> None:
         self.session = session
         self.project_root = project_root
@@ -64,6 +66,7 @@ class MainScreen(Screen):
         self.agent = agent
         self.resume_session_id = resume_session_id
         self.watch_manager = watch_manager
+        self.bridge_factory = bridge_factory
         self._sidebar_hidden = settings.sidebar.mode == "hidden"
         super().__init__()
 
@@ -81,6 +84,7 @@ class MainScreen(Screen):
                     agent_command=self.agent.command_for_platform("default"),
                     resume_session_id=self.resume_session_id,
                     mode_name=self.session.mode_name,
+                    bridge_factory=self.bridge_factory,
                 )
         yield Footer()
 

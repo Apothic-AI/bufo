@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any, Callable
 
 from textual.app import App, ComposeResult
 from textual.css.query import NoMatches
@@ -15,7 +16,7 @@ from bufo.agents.catalog import AgentRegistry
 from bufo.agents.schema import AgentDescriptor
 from bufo.config.models import AppSettings
 from bufo.config.store import SettingsStore
-from bufo.fs.watch import WatchManager
+from bufo.fs.watch import NullWatchManager, WatchManager
 from bufo.messages import LaunchAgent, OpenSessions, OpenSettings, ResumeAgent
 from bufo.notifications import NotificationEvent, Notifier
 from bufo.persistence.sessions import SessionStore
@@ -63,6 +64,9 @@ class BufoApp(App[None]):
         force_store: bool = False,
         ad_hoc_agent_command: str | None = None,
         ad_hoc_agent_name: str = "Custom ACP",
+        bridge_factory: Callable[[str, Path, Any], Any] | None = None,
+        enable_watchers: bool = True,
+        check_updates: bool = True,
     ) -> None:
         self.project_root = project_root.expanduser().resolve()
         self.initial_agent = initial_agent
@@ -70,6 +74,9 @@ class BufoApp(App[None]):
         self.force_store = force_store
         self.ad_hoc_agent_command = ad_hoc_agent_command
         self.ad_hoc_agent_name = ad_hoc_agent_name
+        self.bridge_factory = bridge_factory
+        self.enable_watchers = enable_watchers
+        self.check_updates = check_updates
 
         self.settings_store = SettingsStore()
         self.settings = self.settings_store.load()
@@ -77,7 +84,7 @@ class BufoApp(App[None]):
 
         self.session_store = SessionStore()
         self.session_tracker = SessionTracker()
-        self.watch_manager = WatchManager()
+        self.watch_manager = WatchManager() if enable_watchers else NullWatchManager()
 
         data_dir = Path(__file__).resolve().parent / "data" / "agents"
         self.registry = AgentRegistry(package_data_dir=data_dir)
@@ -108,7 +115,8 @@ class BufoApp(App[None]):
                 self.notify(f"Catalog warning: {warning}", severity="warning")
 
         self.telemetry.capture(TelemetryEvent(name="app_start", properties={"version": __version__}))
-        asyncio.create_task(self._background_version_check())
+        if self.check_updates:
+            asyncio.create_task(self._background_version_check())
 
         if self.force_store:
             return
@@ -193,6 +201,7 @@ class BufoApp(App[None]):
                 }),
                 resume_session_id=resume_session_id,
                 watch_manager=self.watch_manager,
+                bridge_factory=self.bridge_factory,
             ),
         )
         self.switch_mode(session.mode_name)
