@@ -4,6 +4,9 @@
 
 It provides one Textual-based control plane for agent prompting, persistent shell execution, session resume, settings, and local metadata persistence.
 
+> ⚠️ **Status:** Bufo is a new work in progress and is not yet ready for production use.
+> Contributions are very welcome.
+
 ## Current capabilities
 
 - Agent store / launcher with built-in catalog descriptors and custom overrides.
