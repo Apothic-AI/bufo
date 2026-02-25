@@ -60,7 +60,13 @@
   - Enforced ACP-only launches in app runtime; non-ACP entries are rejected with a clear user-facing error.
 - Removed duplicate runtime logger initialization from CLI entrypoints (prevents duplicate `logging.configured` lines at startup).
 - Added e2e coverage for unsupported-protocol launch rejection.
-- Full automated suite currently passing: 50 tests total.
+- Fixed project file-browser rendering/refresh regressions:
+  - Replaced flat root rendering with true hierarchical tree rendering.
+  - Directory nodes are now expandable/collapsible as expected.
+  - Stabilized refresh ordering to avoid visual path shuffling/flicker on auto-refresh.
+  - Scoped tree worker-group IDs per widget instance to avoid cross-session refresh worker collisions.
+- Added e2e regression test for expandable directory nodes and nested child placement.
+- Full automated suite currently passing: 51 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.

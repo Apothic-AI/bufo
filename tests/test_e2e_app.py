@@ -516,6 +516,26 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
             labels = [str(node.label) for node in tree.root.children]
             self.assertTrue(any("auto-refresh.txt" in item for item in labels))
 
+    async def test_project_tree_renders_expandable_directory_nodes(self) -> None:
+        nested_dir = self.project_root / "nested-dir"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+        (nested_dir / "child.txt").write_text("x", encoding="utf-8")
+
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot)
+            await pilot.pause(0.2)
+
+            tree = app.screen.query_one("#tree", Tree)
+            root_labels = [str(node.label) for node in tree.root.children]
+            self.assertTrue(any("nested-dir/" in label for label in root_labels))
+            self.assertFalse(any("nested-dir/child.txt" in label for label in root_labels))
+
+            dir_node = next(node for node in tree.root.children if "nested-dir/" in str(node.label))
+            self.assertTrue(dir_node.allow_expand)
+            child_labels = [str(node.label) for node in dir_node.children]
+            self.assertTrue(any("child.txt" in label for label in child_labels))
+
     async def test_session_navigation_next_prev(self) -> None:
         app = self._make_app()
         async with app.run_test() as pilot:
