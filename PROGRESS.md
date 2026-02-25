@@ -26,7 +26,8 @@
   - 6 CLI e2e/integration tests.
   - 6 ACP session-update mapping tests.
   - 4 ACP bridge session-payload tests (`sessionId` capture + prompt block shaping).
-  - Added strict-session regression test to ensure `session/new` followed by prompt always sends `sessionId` (covers the real `yolo-acp` failure mode: `Missing or invalid sessionId`).
+- Added strict-session regression test to ensure `session/new` followed by prompt always sends `sessionId` (covers the real `yolo-acp` failure mode: `Missing or invalid sessionId`).
+- Updated `README.md` to reflect current CLI surface, ACP session-scoped compatibility behavior, yolo-v2 ACP usage example, and canonical test command.
   - Existing 4 core persistence/protocol tests retained.
 - Full automated suite currently passing: 28 tests total.
 
