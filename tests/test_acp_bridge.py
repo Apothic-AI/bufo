@@ -79,18 +79,18 @@ class AcpBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0]["sessionId"], "sid-x")
 
     async def test_new_session_then_prompt_sends_required_session_id(self) -> None:
-        """Regression guard for strict ACP servers (e.g. yolo-acp)."""
+        """Regression guard for strict ACP servers that require sessionId."""
 
         bridge = AcpAgentBridge("agent --acp", Path.cwd(), _noop_event)
 
         async def fake_call(method: str, params: dict[str, Any]) -> dict[str, Any]:
             if method == "session/new":
                 self.assertEqual(params, {"cwd": "/tmp"})
-                return {"sessionId": "yolo-session-1", "modes": []}
+                return {"sessionId": "strict-session-1", "modes": []}
 
             if method == "session/prompt":
                 # This was the bug: prompt calls were missing sessionId.
-                self.assertEqual(params.get("sessionId"), "yolo-session-1")
+                self.assertEqual(params.get("sessionId"), "strict-session-1")
                 self.assertIsInstance(params.get("prompt"), list)
                 self.assertEqual(params["prompt"][0], {"type": "text", "text": "Hello"})
                 return {"stopReason": "end_turn"}
@@ -103,8 +103,8 @@ class AcpBridgeTests(unittest.IsolatedAsyncioTestCase):
         new_result = await bridge.new_session(cwd=Path("/tmp"))
         prompt_result = await bridge.prompt("Hello")
 
-        self.assertEqual(bridge.session_id, "yolo-session-1")
-        self.assertEqual(new_result.get("sessionId"), "yolo-session-1")
+        self.assertEqual(bridge.session_id, "strict-session-1")
+        self.assertEqual(new_result.get("sessionId"), "strict-session-1")
         self.assertEqual(prompt_result.get("stopReason"), "end_turn")
         self.assertEqual(bridge._call.await_count, 2)
 

@@ -51,13 +51,13 @@ bufo about
 bufo replay ./events.jsonl --limit 100
 ```
 
-## Example: yolo-v2 ACP
+## Example: custom ACP agent
 
 ```bash
 bufo acp \
-  "uv run --directory /home/bitnom/Code/yolo-v2 yolo-acp --config /home/bitnom/Code/yolo-v2/yolo.config.toml --cwd /home/bitnom/Code/yolo-v2" \
-  --name "Yolo v2 (config)" \
-  /home/bitnom/Code/yolo-v2
+  "acme-agent --acp --config ./acme-agent.toml --cwd ." \
+  --name "Acme Agent" \
+  .
 ```
 
 ## Testing
