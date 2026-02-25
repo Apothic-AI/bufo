@@ -7,7 +7,7 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Button, Tree
+from textual.widgets import Tree
 
 from bufo.fs.scanner import scan_tree
 from bufo.fs.watch import WatchManager
@@ -24,10 +24,6 @@ class ProjectTreePanel(Vertical):
         height: 1fr;
         border: round $surface-lighten-2;
     }
-
-    ProjectTreePanel Button {
-        margin-top: 1;
-    }
     """
 
     def __init__(self, project_root: Path, watch_manager: WatchManager | None = None) -> None:
@@ -38,7 +34,6 @@ class ProjectTreePanel(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Tree(f"{self.project_root.name}/", id="tree")
-        yield Button("Refresh Now", id="refresh-tree")
 
     def on_mount(self) -> None:
         self.refresh_tree()
@@ -50,10 +45,6 @@ class ProjectTreePanel(Vertical):
         if self.watch_manager is not None:
             self.watch_manager.unwatch(self.project_root, self._watch_callback)
             self.logger.debug("project_tree.watch.stop", project_root=str(self.project_root))
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "refresh-tree":
-            self.refresh_tree()
 
     def refresh_tree(self) -> None:
         self.logger.debug("project_tree.refresh.requested", project_root=str(self.project_root))

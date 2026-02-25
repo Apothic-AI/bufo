@@ -34,6 +34,7 @@
   - Slash command popup suggestions with keyboard cycling and apply behavior.
   - Session strip with per-session tab buttons and explicit "New Session" action.
   - Watcher-driven file tree auto-refresh hardening (directory events + multi-callback manager).
+  - Removed manual tree refresh button; file tree now relies on automatic watcher refresh.
   - Structured JSONL runtime logging (`--log-level`, `--log-file`, `BUFO_LOG_LEVEL`, `BUFO_LOG_FILE`).
 - Added/expanded tests for those behaviors:
   - New e2e coverage for slash popup, session tabs/new-session flow, selection copy helper, and watcher-triggered tree refresh.
