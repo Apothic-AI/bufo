@@ -72,7 +72,11 @@
   - Added markdown rendering support for message/detail blocks (including fenced code).
   - Added collapsed-by-default tool detail handling with slash-command expansion/collapse controls.
 - Added regression tests for plan/tool-call normalization and collapsed/expandable tool details in the UI.
-- Full automated suite currently passing: 54 tests total.
+- Added startup resilience for Linux inotify exhaustion (`OSError: [Errno 24] inotify instance limit reached`):
+  - Watcher initialization now falls back to `NullWatchManager` instead of crashing.
+  - App shows a warning notification that file watching has been disabled.
+- Added regression coverage for watcher fallback on inotify-limit startup failure.
+- Full automated suite currently passing: 55 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.

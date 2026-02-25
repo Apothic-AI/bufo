@@ -96,10 +96,22 @@ class BufoApp(App[None]):
 
         self.session_store = SessionStore()
         self.session_tracker = SessionTracker()
+        self._watcher_startup_error: str | None = None
         if watch_manager is not None:
             self.watch_manager = watch_manager
+        elif not enable_watchers:
+            self.watch_manager = NullWatchManager()
         else:
-            self.watch_manager = WatchManager() if enable_watchers else NullWatchManager()
+            try:
+                self.watch_manager = WatchManager()
+            except OSError as exc:
+                self.watch_manager = NullWatchManager()
+                self._watcher_startup_error = str(exc)
+                self.logger.warning(
+                    "app.watch_manager.disabled_on_error",
+                    errno=getattr(exc, "errno", None),
+                    error=str(exc),
+                )
         self._last_copied_selection: str | None = None
         self._last_copied_at = 0.0
 
@@ -137,6 +149,9 @@ class BufoApp(App[None]):
         if self.catalog_warnings:
             for warning in self.catalog_warnings:
                 self.notify(f"Catalog warning: {warning}", severity="warning")
+
+        if self._watcher_startup_error is not None:
+            self.notify(self._watcher_startup_message(), severity="warning")
 
         self.telemetry.capture(TelemetryEvent(name="app_start", properties={"version": __version__}))
         if self.check_updates:
@@ -424,6 +439,20 @@ class BufoApp(App[None]):
                 error=str(exc),
             )
             return False
+
+    def _watcher_startup_message(self) -> str:
+        details = self._watcher_startup_error or "unknown watcher error"
+        if "Errno 24" in details:
+            return (
+                "File watching disabled (inotify instance limit reached). "
+                "Increase your inotify limit or run with watchers disabled."
+            )
+        if "Errno 28" in details or "inotify" in details.lower():
+            return (
+                "File watching disabled (inotify watch limit reached). "
+                "Increase your inotify limits or run with watchers disabled."
+            )
+        return f"File watching disabled: {details}"
 
 
 class AcpCommandApp(BufoApp):

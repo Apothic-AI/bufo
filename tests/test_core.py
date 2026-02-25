@@ -5,8 +5,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from bufo.app import BufoApp
 from bufo.config.store import SettingsStore
+from bufo.fs.watch import NullWatchManager
 from bufo.persistence.sessions import SessionStore
 from bufo.prompt_resources import expand_prompt_resources
 from bufo.protocol.jsonrpc import JsonRpcConnection
@@ -101,6 +104,24 @@ class JsonRpcTests(unittest.IsolatedAsyncioTestCase):
         await task
 
         self.assertEqual(result, {"ok": True})
+
+
+class BufoAppBootstrapTests(unittest.TestCase):
+    def test_falls_back_to_null_watch_manager_when_inotify_limit_hit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch(
+                "bufo.app.WatchManager",
+                side_effect=OSError(24, "inotify instance limit reached"),
+            ):
+                app = BufoApp(
+                    project_root=Path(tmp),
+                    force_store=True,
+                    check_updates=False,
+                )
+
+        self.assertIsInstance(app.watch_manager, NullWatchManager)
+        self.assertIn("Errno 24", app._watcher_startup_error or "")  # noqa: SLF001
+        self.assertIn("inotify", app._watcher_startup_message().lower())  # noqa: SLF001
 
 
 if __name__ == "__main__":

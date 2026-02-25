@@ -34,6 +34,7 @@ It provides one Textual-based control plane for agent prompting, persistent shel
 - Drag-selection in logs with auto-copy and in-app clipboard notification.
 - Structured JSONL runtime logging with CLI/env level gating.
 - Agent stderr lines are written to runtime logs (not rendered in the chat timeline).
+- Graceful watcher fallback: if inotify limits are exhausted at startup, Bufo disables file watching instead of crashing.
 
 ## CLI
 
@@ -82,7 +83,7 @@ bufo acp \
 uv run python -m unittest discover -s tests -v
 ```
 
-The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (54 tests).
+The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (55 tests).
 
 ## Notes
 
