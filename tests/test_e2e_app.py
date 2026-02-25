@@ -47,6 +47,11 @@ class FakeWatchManager:
         self._callbacks.clear()
 
 
+class FailingWatchManager(FakeWatchManager):
+    def watch(self, path: Path, callback) -> None:  # noqa: ANN001
+        raise OSError(24, "inotify instance limit reached")
+
+
 class FakeBridge:
     instances: list["FakeBridge"] = []
 
@@ -553,6 +558,19 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
 
             labels = [str(node.label) for node in tree.root.children]
             self.assertTrue(any("auto-refresh.txt" in item for item in labels))
+
+    async def test_project_tree_handles_inotify_limit_without_crashing(self) -> None:
+        watch_manager = FailingWatchManager()
+        app = self._make_app(watch_manager=watch_manager)
+        async with app.run_test() as pilot:
+            with patch.object(app, "notify") as notify_mock:
+                await self._launch_first_agent(app, pilot)
+                await pilot.pause(0.2)
+            conversation = app.screen.query_one(Conversation)
+            self.assertIsNotNone(conversation)
+            notify_mock.assert_called()
+            args, _kwargs = notify_mock.call_args
+            self.assertIn("File watching disabled", args[0])
 
     async def test_project_tree_renders_expandable_directory_nodes(self) -> None:
         nested_dir = self.project_root / "nested-dir"

@@ -76,7 +76,11 @@
   - Watcher initialization now falls back to `NullWatchManager` instead of crashing.
   - App shows a warning notification that file watching has been disabled.
 - Added regression coverage for watcher fallback on inotify-limit startup failure.
-- Full automated suite currently passing: 55 tests total.
+- Added runtime resilience for inotify exhaustion during directory watch registration:
+  - `WatchManager.watch` now catches inotify-limit `OSError`s and degrades gracefully.
+  - Project tree mount now handles watcher registration failures without crashing.
+  - Added e2e regression coverage for project-tree mount under inotify-limit errors.
+- Full automated suite currently passing: 56 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.

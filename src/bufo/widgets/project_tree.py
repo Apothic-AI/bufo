@@ -31,6 +31,7 @@ class ProjectTreePanel(Vertical):
     def __init__(self, project_root: Path, watch_manager: WatchManager | None = None) -> None:
         self.project_root = project_root
         self.watch_manager = watch_manager
+        self._watch_registered = False
         self.logger = get_runtime_logger()
         self._worker_group = f"project-tree-{id(self)}"
         super().__init__()
@@ -42,10 +43,30 @@ class ProjectTreePanel(Vertical):
         self.refresh_tree()
         if self.watch_manager is not None:
             self.logger.debug("project_tree.watch.start", project_root=str(self.project_root))
-            self.watch_manager.watch(self.project_root, self._watch_callback)
+            try:
+                started = self.watch_manager.watch(self.project_root, self._watch_callback)
+            except OSError as exc:
+                self.logger.warning(
+                    "project_tree.watch.failed",
+                    project_root=str(self.project_root),
+                    errno=getattr(exc, "errno", None),
+                    error=str(exc),
+                )
+                self.app.notify(
+                    "File watching disabled (inotify limit reached).",
+                    severity="warning",
+                )
+                return
+            if started is False:
+                self.app.notify(
+                    "File watching disabled (inotify limit reached).",
+                    severity="warning",
+                )
+                return
+            self._watch_registered = True
 
     def on_unmount(self) -> None:
-        if self.watch_manager is not None:
+        if self.watch_manager is not None and self._watch_registered:
             self.watch_manager.unwatch(self.project_root, self._watch_callback)
             self.logger.debug("project_tree.watch.stop", project_root=str(self.project_root))
 

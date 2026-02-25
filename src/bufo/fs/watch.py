@@ -67,13 +67,13 @@ class WatchManager:
         self._logger = get_runtime_logger()
         self._logger.info("watch.manager.started")
 
-    def watch(self, path: Path, callback: Callable[[], None]) -> None:
+    def watch(self, path: Path, callback: Callable[[], None]) -> bool:
         key = path.resolve()
         callbacks = self._callbacks.setdefault(key, [])
         callbacks.append(callback)
         if key in self._handlers:
             self._logger.debug("watch.manager.reused", path=str(key), callback_count=len(callbacks))
-            return
+            return True
 
         def dispatch() -> None:
             for cb in list(self._callbacks.get(key, [])):
@@ -81,8 +81,26 @@ class WatchManager:
 
         handler = _DebouncedHandler(dispatch, path=key)
         self._handlers[key] = handler
-        self._watches[key] = self._observer.schedule(handler, str(key), recursive=True)
+        try:
+            self._watches[key] = self._observer.schedule(handler, str(key), recursive=True)
+        except OSError as exc:
+            # Gracefully degrade when inotify limits are exhausted.
+            self._handlers.pop(key, None)
+            self._watches.pop(key, None)
+            retained = [cb for cb in callbacks if cb is not callback]
+            if retained:
+                self._callbacks[key] = retained
+            else:
+                self._callbacks.pop(key, None)
+            self._logger.warning(
+                "watch.manager.watch.failed",
+                path=str(key),
+                errno=getattr(exc, "errno", None),
+                error=str(exc),
+            )
+            return False
         self._logger.info("watch.manager.watch", path=str(key), callback_count=len(callbacks))
+        return True
 
     def unwatch(self, path: Path, callback: Callable[[], None] | None = None) -> None:
         key = path.resolve()
@@ -125,8 +143,8 @@ class WatchManager:
 class NullWatchManager:
     """No-op watcher for tests and restricted environments."""
 
-    def watch(self, path: Path, callback: Callable[[], None]) -> None:  # noqa: ARG002
-        return
+    def watch(self, path: Path, callback: Callable[[], None]) -> bool:  # noqa: ARG002
+        return True
 
     def unwatch(self, path: Path, callback: Callable[[], None] | None = None) -> None:  # noqa: ARG002
         return
