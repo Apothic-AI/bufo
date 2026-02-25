@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from bufo.protocol.jsonrpc import JsonRpcConnection
+from bufo.protocol.jsonrpc import JsonRpcConnection, JsonRpcFailure
 
 EventHandler = Callable[["AgentEvent"], Awaitable[None]]
 
@@ -35,6 +35,7 @@ class AcpAgentBridge:
         self.process: asyncio.subprocess.Process | None = None
         self.connection: JsonRpcConnection | None = None
         self._reader_task: asyncio.Task[None] | None = None
+        self.session_id: str | None = None
 
     async def start(self) -> None:
         argv = shlex.split(self.command)
@@ -86,22 +87,49 @@ class AcpAgentBridge:
         return await self._call("initialize", {"client": {"name": client_name, "version": version}})
 
     async def new_session(self, *, cwd: Path) -> Any:
-        return await self._call("session/new", {"cwd": str(cwd)})
+        result = await self._call("session/new", {"cwd": str(cwd)})
+        if isinstance(result, dict):
+            session_id = result.get("sessionId")
+            if isinstance(session_id, str) and session_id:
+                self.session_id = session_id
+        return result
 
     async def load_session(self, *, session_id: str, cwd: Path) -> Any:
-        return await self._call("session/load", {"sessionId": session_id, "cwd": str(cwd)})
+        result = await self._call("session/load", {"sessionId": session_id, "cwd": str(cwd)})
+        self.session_id = session_id
+        return result
 
     async def prompt(self, text: str, resources: list[dict[str, Any]] | None = None) -> Any:
-        payload: dict[str, Any] = {"prompt": text}
-        if resources:
-            payload["resources"] = resources
-        return await self._call("session/prompt", payload)
+        payload = self._build_prompt_payload(text, resources or [])
+        try:
+            return await self._call("session/prompt", payload)
+        except JsonRpcFailure as exc:
+            # Compatibility fallback for ACP servers expecting legacy string prompt payloads.
+            if exc.code != -32602:
+                raise
+            legacy_payload: dict[str, Any] = {
+                "sessionId": self.session_id,
+                "prompt": text,
+            }
+            if resources:
+                legacy_payload["resources"] = resources
+            return await self._call("session/prompt", legacy_payload)
 
     async def set_mode(self, mode: str) -> Any:
-        return await self._call("session/mode", {"mode": mode})
+        payload = {"sessionId": self.session_id, "modeId": mode}
+        try:
+            return await self._call("session/set_mode", payload)
+        except JsonRpcFailure as exc:
+            # Compatibility fallback for ACP servers exposing a legacy mode endpoint.
+            if exc.code != -32601:
+                raise
+            return await self._call(
+                "session/mode",
+                {"sessionId": self.session_id, "mode": mode},
+            )
 
     async def cancel(self) -> Any:
-        return await self._call("session/cancel", {})
+        return await self._call("session/cancel", {"sessionId": self.session_id})
 
     async def _call(self, method: str, params: dict[str, Any]) -> Any:
         if self.connection is None:
@@ -135,6 +163,9 @@ class AcpAgentBridge:
 
     async def _on_session_update(self, params: dict[str, Any] | list[Any] | None) -> dict[str, Any]:
         payload = params if isinstance(params, dict) else {"raw": params}
+        session_id = payload.get("sessionId")
+        if isinstance(session_id, str) and session_id:
+            self.session_id = session_id
         await self.on_event(AgentEvent(type="session/update", payload=payload))
         return {"ok": True}
 
@@ -182,3 +213,39 @@ class AcpAgentBridge:
         payload = params if isinstance(params, dict) else {"raw": params}
         await self.on_event(AgentEvent(type="terminal/request", payload=payload))
         return {"ok": False, "error": "terminal adapter not wired"}
+
+    def _build_prompt_payload(self, text: str, resources: list[dict[str, Any]]) -> dict[str, Any]:
+        prompt_blocks: list[dict[str, Any]] = [{"type": "text", "text": text}]
+
+        for resource in resources:
+            resource_type = resource.get("type")
+            path = str(resource.get("path", "resource"))
+            mime = str(resource.get("mime", "application/octet-stream"))
+
+            if resource_type == "text":
+                prompt_blocks.append(
+                    {
+                        "type": "resource",
+                        "resource": {
+                            "uri": path,
+                            "mimeType": mime,
+                            "text": str(resource.get("text", "")),
+                        },
+                    }
+                )
+            elif resource_type == "binary":
+                prompt_blocks.append(
+                    {
+                        "type": "resource",
+                        "resource": {
+                            "uri": path,
+                            "mimeType": mime,
+                            "blob": str(resource.get("base64", "")),
+                        },
+                    }
+                )
+
+        return {
+            "sessionId": self.session_id,
+            "prompt": prompt_blocks,
+        }

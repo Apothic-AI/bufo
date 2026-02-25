@@ -19,11 +19,13 @@
 - Added core cleanroom tests for settings/session store/prompt resources/JSON-RPC.
 - Updated packaging metadata (`pyproject.toml`) and `README.md`.
 - Hardened ACP session update mapping with typed/legacy event normalization, including tool lifecycle, mode, slash-command, and state events.
+- Fixed ACP session-scoped RPC compatibility for agents that require `sessionId` on prompt/mode/cancel calls (validated against `yolo-acp` in `/home/bitnom/Code/yolo-v2`).
 - Added test-ready app injection points (custom bridge factory, optional watcher disable, optional update-check disable) for deterministic runtime testing.
 - Added extensive end-to-end and integration coverage:
   - 12 Textual app e2e tests (launcher, resume, settings/sessions modals, prompt/shell flows, permission flows, tool lifecycle rendering, session navigation).
   - 6 CLI e2e/integration tests.
   - 6 ACP session-update mapping tests.
+  - 4 ACP bridge session-payload tests (`sessionId` capture + prompt block shaping).
   - Existing 4 core persistence/protocol tests retained.
 - Full automated suite currently passing: 28 tests total.
 
