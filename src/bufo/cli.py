@@ -9,6 +9,7 @@ import click
 
 from bufo.app import AcpCommandApp, BufoApp
 from bufo.paths import settings_path
+from bufo.runtime_logging import configure_runtime_logging
 from bufo.version import __version__
 
 
@@ -29,6 +30,20 @@ def main(ctx: click.Context) -> None:
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8123, type=int, show_default=True)
 @click.option("--public", is_flag=True, help="Expose via public URL when supported")
+@click.option(
+    "--log-level",
+    type=click.Choice(["off", "error", "warning", "info", "debug"], case_sensitive=False),
+    envvar="BUFO_LOG_LEVEL",
+    default=None,
+    help="Runtime log level (also BUFO_LOG_LEVEL).",
+)
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path, dir_okay=False, writable=True),
+    envvar="BUFO_LOG_FILE",
+    default=None,
+    help="Path for JSONL runtime log output (also BUFO_LOG_FILE).",
+)
 def run(
     project_dir: str,
     agent_identity: str | None,
@@ -38,12 +53,25 @@ def run(
     host: str,
     port: int,
     public: bool,
+    log_level: str | None,
+    log_file: Path | None,
 ) -> None:
     """Run Bufo."""
     project_root = Path(project_dir).expanduser().resolve()
+    configure_runtime_logging(level=log_level, log_file=log_file)
 
     if serve:
-        _serve_app(project_root, agent_identity, resume_session_id, force_store, host, port, public)
+        _serve_app(
+            project_root,
+            agent_identity,
+            resume_session_id,
+            force_store,
+            host,
+            port,
+            public,
+            log_level=log_level,
+            log_file=log_file,
+        )
         return
 
     app = BufoApp(
@@ -51,6 +79,8 @@ def run(
         initial_agent=agent_identity,
         resume_session_id=resume_session_id,
         force_store=force_store,
+        log_level=log_level,
+        log_file=log_file,
     )
     app.run()
 
@@ -60,22 +90,77 @@ def run(
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8123, type=int, show_default=True)
 @click.option("--public", is_flag=True)
-def serve(project_dir: str, host: str, port: int, public: bool) -> None:
+@click.option(
+    "--log-level",
+    type=click.Choice(["off", "error", "warning", "info", "debug"], case_sensitive=False),
+    envvar="BUFO_LOG_LEVEL",
+    default=None,
+    help="Runtime log level (also BUFO_LOG_LEVEL).",
+)
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path, dir_okay=False, writable=True),
+    envvar="BUFO_LOG_FILE",
+    default=None,
+    help="Path for JSONL runtime log output (also BUFO_LOG_FILE).",
+)
+def serve(
+    project_dir: str,
+    host: str,
+    port: int,
+    public: bool,
+    log_level: str | None,
+    log_file: Path | None,
+) -> None:
     """Serve Bufo via browser using textual-serve."""
     project_root = Path(project_dir).expanduser().resolve()
-    _serve_app(project_root, None, None, True, host, port, public)
+    configure_runtime_logging(level=log_level, log_file=log_file)
+    _serve_app(
+        project_root,
+        None,
+        None,
+        True,
+        host,
+        port,
+        public,
+        log_level=log_level,
+        log_file=log_file,
+    )
 
 
 @main.command("acp")
 @click.argument("command")
 @click.option("--name", default="Custom ACP", show_default=True)
 @click.argument("project_dir", required=False, default=".")
-def acp_command(command: str, name: str, project_dir: str) -> None:
+@click.option(
+    "--log-level",
+    type=click.Choice(["off", "error", "warning", "info", "debug"], case_sensitive=False),
+    envvar="BUFO_LOG_LEVEL",
+    default=None,
+    help="Runtime log level (also BUFO_LOG_LEVEL).",
+)
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path, dir_okay=False, writable=True),
+    envvar="BUFO_LOG_FILE",
+    default=None,
+    help="Path for JSONL runtime log output (also BUFO_LOG_FILE).",
+)
+def acp_command(
+    command: str,
+    name: str,
+    project_dir: str,
+    log_level: str | None,
+    log_file: Path | None,
+) -> None:
     """Run a custom ACP command without catalog installation."""
+    configure_runtime_logging(level=log_level, log_file=log_file)
     app = AcpCommandApp(
         project_root=Path(project_dir).expanduser().resolve(),
         command=command,
         name=name,
+        log_level=log_level,
+        log_file=log_file,
     )
     app.run()
 
@@ -119,6 +204,9 @@ def _serve_app(
     host: str,
     port: int,
     public: bool,
+    *,
+    log_level: str | None = None,
+    log_file: Path | None = None,
 ) -> None:
     try:
         from textual_serve.server import Server
@@ -132,6 +220,8 @@ def _serve_app(
         initial_agent=agent_identity,
         resume_session_id=resume_session_id,
         force_store=force_store,
+        log_level=log_level,
+        log_file=log_file,
     )
     server = Server(app, host=host, port=port, public_url=public)
     server.serve()

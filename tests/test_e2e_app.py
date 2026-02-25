@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import threading
 import unittest
 import warnings
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from textual.widgets import Button, Input
+from textual.widgets import Button, Input, OptionList, Tree
 
 from bufo.agents.bridge import AgentEvent
 from bufo.app import BufoApp
@@ -15,10 +17,32 @@ from bufo.messages import LaunchAgent, ResumeAgent
 from bufo.screens.modals import PermissionModal
 from bufo.screens.sessions import SessionsScreen
 from bufo.screens.settings import SettingsScreen
+from bufo.screens.store import StoreScreen
 from bufo.widgets.conversation import Conversation
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"pathspec.*")
+
+
+class FakeWatchManager:
+    def __init__(self) -> None:
+        self._callbacks: dict[Path, Any] = {}
+
+    def watch(self, path: Path, callback) -> None:  # noqa: ANN001
+        self._callbacks[path.resolve()] = callback
+
+    def unwatch(self, path: Path, callback=None) -> None:  # noqa: ANN001, ARG002
+        self._callbacks.pop(path.resolve(), None)
+
+    def emit(self, path: Path) -> None:
+        callback = self._callbacks.get(path.resolve())
+        if callback is not None:
+            thread = threading.Thread(target=callback)
+            thread.start()
+            thread.join(timeout=1)
+
+    def close(self) -> None:
+        self._callbacks.clear()
 
 
 class FakeBridge:
@@ -263,6 +287,27 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.settings.shell.default_mode, "shell")
             self.assertIn("shell", bridge.modes)
 
+    async def test_slash_menu_appears_and_cycles(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            prompt = conversation.query_one("#prompt", Input)
+            prompt.focus()
+            prompt.value = "/"
+            await pilot.pause(0.1)
+
+            menu = conversation.query_one("#slash-menu", OptionList)
+            self.assertNotIn("hidden", menu.classes)
+            self.assertGreater(menu.option_count, 1)
+
+            initial = menu.highlighted
+            menu.action_cursor_down()
+            self.assertNotEqual(menu.highlighted, initial)
+
+            await pilot.press("tab")
+            await pilot.pause(0.1)
+            self.assertTrue(prompt.value.startswith("/"))
+
     async def test_shell_command_runs_end_to_end(self) -> None:
         app = self._make_app()
         async with app.run_test() as pilot:
@@ -309,6 +354,33 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("started", lines)
             self.assertIn("completed", lines)
 
+    async def test_selection_copy_helper_copies_and_notifies(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot)
+            app.screen.get_selected_text = lambda: "copied text"  # type: ignore[method-assign]
+            with patch.object(app, "notify") as notify_mock:
+                self.assertTrue(app._copy_selected_text_with_notification())  # noqa: SLF001
+                self.assertFalse(app._copy_selected_text_with_notification())  # noqa: SLF001
+            self.assertEqual(app.clipboard, "copied text")
+            notify_mock.assert_called_once()
+
+    async def test_project_tree_auto_refreshes_when_watch_event_fires(self) -> None:
+        watch_manager = FakeWatchManager()
+        app = self._make_app(watch_manager=watch_manager)
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot)
+            tree = app.screen.query_one("#tree", Tree)
+            existing = [str(node.label) for node in tree.root.children]
+            self.assertFalse(any("auto-refresh.txt" in item for item in existing))
+
+            (self.project_root / "auto-refresh.txt").write_text("x", encoding="utf-8")
+            watch_manager.emit(self.project_root)
+            await pilot.pause(0.35)
+
+            labels = [str(node.label) for node in tree.root.children]
+            self.assertTrue(any("auto-refresh.txt" in item for item in labels))
+
     async def test_session_navigation_next_prev(self) -> None:
         app = self._make_app()
         async with app.run_test() as pilot:
@@ -328,6 +400,25 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
             app.action_next_session()
             await pilot.pause(0.1)
             self.assertEqual(app.current_mode, second_mode)
+
+    async def test_session_tabs_and_new_session_button(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot)
+            first_mode = app.current_mode
+            second_identity = app.catalog[1].identity
+            app.post_message(LaunchAgent(agent_identity=second_identity, project_root=self.project_root))
+            await pilot.pause(0.25)
+            second_mode = app.current_mode
+            self.assertNotEqual(first_mode, second_mode)
+
+            app.screen.query_one(f"#session-tab-{first_mode}", Button).press()
+            await pilot.pause(0.2)
+            self.assertEqual(app.current_mode, first_mode)
+
+            app.screen.query_one("#new-session", Button).press()
+            await pilot.pause(0.2)
+            self.assertIsInstance(app.screen, StoreScreen)
 
 
 if __name__ == "__main__":

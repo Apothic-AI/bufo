@@ -9,12 +9,16 @@ It provides one Textual-based control plane for agent prompting, persistent shel
 - Agent store / launcher with built-in catalog descriptors and custom overrides.
 - Mode-backed multi-session runtime with resumable metadata in SQLite.
 - Conversation workspace that merges agent prompting, slash commands, and persistent shell commands.
+- Slash-command suggestion popup (type `/`, cycle suggestions, apply quickly).
 - JSON-RPC transport + ACP bridge for process-based agents over stdio.
 - ACP session-scoped compatibility for strict servers: negotiated `sessionId` is reused for prompt/mode/cancel calls.
 - ACP prompt payload shaping with text/resource blocks plus legacy fallback behavior.
 - Permission modal workflow, diff rendering helpers, command risk analysis.
 - Project-scoped prompt/shell histories and XDG-based config/state/data layout.
-- Project tree panel with scanner + watcher-driven refresh.
+- Project tree panel with scanner + watchdog-driven auto refresh.
+- Session strip with per-session chat tabs and quick "New Session" entry.
+- Selection auto-copy with in-app clipboard notification.
+- Structured JSONL runtime logging with CLI/env level gating.
 
 ## CLI
 
@@ -27,6 +31,9 @@ bufo run --agent codex-cli
 
 # open launcher/store explicitly
 bufo run --store
+
+# enable runtime debug logs (JSONL)
+BUFO_LOG_LEVEL=debug bufo run --log-file /tmp/bufo.runtime.jsonl
 
 # serve in browser via textual-serve
 bufo serve --host 127.0.0.1 --port 8123
@@ -60,7 +67,7 @@ bufo acp \
 uv run python -m unittest discover -s tests -v
 ```
 
-The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, CLI integration, and end-to-end Textual app flows.
+The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (39 tests).
 
 ## Notes
 

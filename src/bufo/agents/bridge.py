@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from bufo.protocol.jsonrpc import JsonRpcConnection, JsonRpcFailure
+from bufo.runtime_logging import get_runtime_logger
 
 EventHandler = Callable[["AgentEvent"], Awaitable[None]]
 
@@ -36,9 +37,11 @@ class AcpAgentBridge:
         self.connection: JsonRpcConnection | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self.session_id: str | None = None
+        self.logger = get_runtime_logger()
 
     async def start(self) -> None:
         argv = shlex.split(self.command)
+        self.logger.info("bridge.start", command=self.command, cwd=str(self.cwd))
         self.process = await asyncio.create_subprocess_exec(
             *argv,
             cwd=str(self.cwd),
@@ -66,8 +69,10 @@ class AcpAgentBridge:
 
         self._reader_task = asyncio.create_task(self._read_stdout_loop())
         asyncio.create_task(self._read_stderr_loop())
+        self.logger.debug("bridge.started")
 
     async def stop(self) -> None:
+        self.logger.info("bridge.stop", session_id=self.session_id)
         if self.connection is not None:
             self.connection.shutdown()
 
@@ -82,31 +87,48 @@ class AcpAgentBridge:
             with contextlib.suppress(ProcessLookupError):
                 await asyncio.wait_for(self.process.wait(), timeout=2)
         self.process = None
+        self.logger.debug("bridge.stopped")
 
     async def initialize(self, client_name: str = "bufo", version: str = "0.0.1") -> Any:
+        self.logger.debug("bridge.initialize", client_name=client_name, version=version)
         return await self._call("initialize", {"client": {"name": client_name, "version": version}})
 
     async def new_session(self, *, cwd: Path) -> Any:
+        self.logger.info("bridge.new_session", cwd=str(cwd))
         result = await self._call("session/new", {"cwd": str(cwd)})
         if isinstance(result, dict):
             session_id = result.get("sessionId")
             if isinstance(session_id, str) and session_id:
                 self.session_id = session_id
+                self.logger.info("bridge.session.created", session_id=self.session_id)
         return result
 
     async def load_session(self, *, session_id: str, cwd: Path) -> Any:
+        self.logger.info("bridge.load_session", session_id=session_id, cwd=str(cwd))
         result = await self._call("session/load", {"sessionId": session_id, "cwd": str(cwd)})
         self.session_id = session_id
         return result
 
     async def prompt(self, text: str, resources: list[dict[str, Any]] | None = None) -> Any:
         payload = self._build_prompt_payload(text, resources or [])
+        self.logger.debug(
+            "bridge.prompt",
+            session_id=self.session_id,
+            resource_count=len(resources or []),
+            prompt_type="blocks",
+        )
         try:
             return await self._call("session/prompt", payload)
         except JsonRpcFailure as exc:
             # Compatibility fallback for ACP servers expecting legacy string prompt payloads.
             if exc.code != -32602:
                 raise
+            self.logger.warning(
+                "bridge.prompt.legacy_fallback",
+                session_id=self.session_id,
+                error_code=exc.code,
+                error_message=exc.message,
+            )
             legacy_payload: dict[str, Any] = {
                 "sessionId": self.session_id,
                 "prompt": text,
@@ -117,23 +139,27 @@ class AcpAgentBridge:
 
     async def set_mode(self, mode: str) -> Any:
         payload = {"sessionId": self.session_id, "modeId": mode}
+        self.logger.debug("bridge.set_mode", session_id=self.session_id, mode=mode)
         try:
             return await self._call("session/set_mode", payload)
         except JsonRpcFailure as exc:
             # Compatibility fallback for ACP servers exposing a legacy mode endpoint.
             if exc.code != -32601:
                 raise
+            self.logger.warning("bridge.set_mode.legacy_fallback", session_id=self.session_id, mode=mode)
             return await self._call(
                 "session/mode",
                 {"sessionId": self.session_id, "mode": mode},
             )
 
     async def cancel(self) -> Any:
+        self.logger.info("bridge.cancel", session_id=self.session_id)
         return await self._call("session/cancel", {"sessionId": self.session_id})
 
     async def _call(self, method: str, params: dict[str, Any]) -> Any:
         if self.connection is None:
             raise RuntimeError("Bridge not started")
+        self.logger.debug("bridge.rpc.call", method=method, session_id=self.session_id)
         return await self.connection.call(method, params)
 
     async def _read_stdout_loop(self) -> None:
@@ -142,6 +168,7 @@ class AcpAgentBridge:
         while True:
             line = await self.process.stdout.readline()
             if not line:
+                self.logger.debug("bridge.stdout.closed", session_id=self.session_id)
                 break
             if self.connection is None:
                 continue
@@ -154,6 +181,7 @@ class AcpAgentBridge:
             line = await self.process.stderr.readline()
             if not line:
                 break
+            self.logger.debug("bridge.stderr.line", session_id=self.session_id)
             await self.on_event(
                 AgentEvent(
                     type="agent/stderr",
@@ -166,6 +194,7 @@ class AcpAgentBridge:
         session_id = payload.get("sessionId")
         if isinstance(session_id, str) and session_id:
             self.session_id = session_id
+            self.logger.info("bridge.session.updated", session_id=self.session_id)
         await self.on_event(AgentEvent(type="session/update", payload=payload))
         return {"ok": True}
 

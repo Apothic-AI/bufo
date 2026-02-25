@@ -28,3 +28,13 @@ class OpenSettings(Message):
 
 class OpenSessions(Message):
     pass
+
+
+class SwitchSession(Message):
+    def __init__(self, *, mode_name: str) -> None:
+        self.mode_name = mode_name
+        super().__init__()
+
+
+class CreateSession(Message):
+    pass

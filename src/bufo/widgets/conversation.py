@@ -9,15 +9,26 @@ from typing import Any, Callable
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Input, RichLog, Static
+from textual.widgets import Input, OptionList, RichLog, Static
 
 from bufo.agents.bridge import AcpAgentBridge, AgentEvent
 from bufo.agents.session_updates import normalize_session_update
 from bufo.config.models import AppSettings
 from bufo.persistence.history import ProjectHistories
 from bufo.prompt_resources import expand_prompt_resources
+from bufo.runtime_logging import get_runtime_logger
 from bufo.shell.persistent import PersistentShell
 from bufo.shell.safety import classify_command
+
+_DEFAULT_SLASH_COMMANDS = [
+    "/help",
+    "/clear",
+    "/interrupt",
+    "/mode",
+    "/mode agent",
+    "/mode shell",
+    "/mode auto",
+]
 
 
 class Conversation(Vertical):
@@ -35,6 +46,16 @@ class Conversation(Vertical):
     #status {
         height: 1;
         color: $text-muted;
+    }
+
+    #slash-menu {
+        height: auto;
+        max-height: 7;
+        margin-top: 1;
+    }
+
+    .hidden {
+        display: none;
     }
     """
 
@@ -63,6 +84,9 @@ class Conversation(Vertical):
         self._busy = False
         self._history_cursor = 0
         self._prompt_history = [item.value for item in self.histories.prompt.read()]
+        self._slash_commands: list[str] = list(_DEFAULT_SLASH_COMMANDS)
+        self._visible_slash_commands: list[str] = []
+        self.logger = get_runtime_logger()
         self.timeline_entries: list[str] = []
         super().__init__()
 
@@ -70,8 +94,15 @@ class Conversation(Vertical):
         yield RichLog(id="timeline", wrap=True, markup=True, highlight=False)
         yield Static("idle", id="status")
         yield Input(placeholder="Prompt, slash command, or shell command (!cmd)", id="prompt")
+        yield OptionList(id="slash-menu", classes="hidden")
 
     async def on_mount(self) -> None:
+        self.logger.info(
+            "conversation.mounted",
+            mode_name=self.mode_name,
+            agent_identity=self.agent_identity,
+            project_root=str(self.project_root),
+        )
         await self.shell.start()
         self._set_state("notready")
         self._write_line(f"[dim]Project:[/dim] {self.project_root}")
@@ -94,14 +125,21 @@ class Conversation(Vertical):
                 else:
                     await self.bridge.new_session(cwd=self.project_root)
                 self._write_line("[green]Agent bridge connected[/green]")
+                self.logger.info(
+                    "conversation.bridge.connected",
+                    agent_identity=self.agent_identity,
+                    resume_session_id=self.resume_session_id,
+                )
             except Exception as exc:
                 self._write_line(f"[red]Agent bridge failed:[/red] {exc}")
+                self.logger.error("conversation.bridge.failed", error=str(exc), agent_identity=self.agent_identity)
         else:
             self._write_line("[yellow]No agent command configured; shell-only mode.[/yellow]")
 
         self._set_state("idle")
 
     async def on_unmount(self) -> None:
+        self.logger.info("conversation.unmount", mode_name=self.mode_name)
         if self.bridge is not None:
             await self.bridge.stop()
         await self.shell.close()
@@ -109,12 +147,27 @@ class Conversation(Vertical):
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         prompt = event.value.strip()
         event.input.value = ""
+        self._hide_slash_menu()
         if not prompt:
             return
+
+        selected = self._selected_slash_command()
+        if (
+            selected is not None
+            and prompt.startswith("/")
+            and " " not in prompt
+            and prompt != selected
+        ):
+            prompt = selected
 
         self.histories.prompt.append(prompt)
         self._prompt_history.append(prompt)
         self._history_cursor = len(self._prompt_history)
+        self.logger.debug(
+            "conversation.prompt.submitted",
+            mode_name=self.mode_name,
+            prompt=prompt,
+        )
 
         if prompt.startswith("/"):
             await self._handle_slash(prompt)
@@ -129,6 +182,19 @@ class Conversation(Vertical):
 
     async def on_input_key(self, event: Input.Key) -> None:
         input_widget = event.input
+        if self._slash_menu_visible() and event.key in {"up", "down"}:
+            menu = self.query_one("#slash-menu", OptionList)
+            if event.key == "up":
+                menu.action_cursor_up()
+            else:
+                menu.action_cursor_down()
+            event.stop()
+            return
+        if self._slash_menu_visible() and event.key == "tab":
+            self._apply_selected_slash_command()
+            event.stop()
+            return
+
         if event.key == "up" and input_widget.cursor_position == 0:
             if self._prompt_history and self._history_cursor > 0:
                 self._history_cursor -= 1
@@ -145,9 +211,21 @@ class Conversation(Vertical):
             input_widget.cursor_position = len(input_widget.value)
             event.stop()
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "prompt":
+            return
+        self._refresh_slash_menu(event.value)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_list.id != "slash-menu":
+            return
+        self._apply_selected_slash_command()
+        event.stop()
+
     async def _handle_slash(self, prompt: str) -> None:
         command, *rest = shlex.split(prompt)
         arg = rest[0] if rest else ""
+        self.logger.debug("conversation.prompt.slash", command=command, arg=arg, mode_name=self.mode_name)
 
         if command == "/help":
             self._write_line("[b]/help[/b], [b]/clear[/b], [b]/mode <agent|shell>[/b], [b]/interrupt[/b]")
@@ -197,6 +275,12 @@ class Conversation(Vertical):
         risk = classify_command(command, self.project_root)
         self._write_line(f"[bold cyan]$ {command}[/bold cyan]")
         self.histories.shell.append(command)
+        self.logger.debug(
+            "conversation.prompt.shell",
+            mode_name=self.mode_name,
+            command=command,
+            risk_level=risk.level,
+        )
 
         if risk.level in {"dangerous", "destructive"}:
             decision = await self._ask_permission(
@@ -217,6 +301,7 @@ class Conversation(Vertical):
             self._write_line(block)
         except Exception as exc:
             self._write_line(f"[red]Shell error:[/red] {exc}")
+            self.logger.error("conversation.shell.error", mode_name=self.mode_name, error=str(exc))
         finally:
             self._set_state("idle")
 
@@ -228,6 +313,13 @@ class Conversation(Vertical):
             return
 
         transformed, resources = expand_prompt_resources(self.project_root, prompt)
+        self.logger.debug(
+            "conversation.prompt.agent",
+            mode_name=self.mode_name,
+            prompt=prompt,
+            transformed=transformed,
+            resource_count=len(resources),
+        )
 
         self._set_state("busy")
         try:
@@ -235,8 +327,10 @@ class Conversation(Vertical):
         except Exception as exc:
             self._write_line(f"[red]Agent prompt failed:[/red] {exc}")
             self._set_state("idle")
+            self.logger.error("conversation.agent_prompt.failed", mode_name=self.mode_name, error=str(exc))
 
     async def _on_agent_event(self, event: AgentEvent) -> None:
+        self.logger.debug("conversation.agent_event", mode_name=self.mode_name, event_type=event.type)
         if event.type == "session/update":
             self._render_session_update(event.payload)
             return
@@ -257,6 +351,7 @@ class Conversation(Vertical):
         self._write_line(f"[dim]{event.type}: {event.payload}[/dim]")
 
     def _render_session_update(self, payload: dict[str, Any]) -> None:
+        self._update_slash_commands_from_payload(payload)
         events = normalize_session_update(payload)
         for event in events:
             self._write_line(event.text)
@@ -266,12 +361,83 @@ class Conversation(Vertical):
     def _set_state(self, state: str) -> None:
         self._busy = state != "idle"
         self.query_one("#status", Static).update(f"state: {state}")
+        self.logger.debug("conversation.state", mode_name=self.mode_name, state=state)
         if hasattr(self.app, "session_tracker"):
             self.app.session_tracker.update_state(self.mode_name, state)  # type: ignore[attr-defined]
 
     def _write_line(self, text: str) -> None:
         self.timeline_entries.append(text)
         self.query_one("#timeline", RichLog).write(text)
+
+    def _refresh_slash_menu(self, value: str) -> None:
+        text = value.strip()
+        if not text.startswith("/") or " " in text:
+            self._hide_slash_menu()
+            return
+
+        matches = [command for command in self._slash_commands if command.startswith(text)]
+        if not matches:
+            self._hide_slash_menu()
+            return
+
+        menu = self.query_one("#slash-menu", OptionList)
+        if matches != self._visible_slash_commands:
+            menu.set_options(matches)
+            menu.highlighted = 0
+            self._visible_slash_commands = matches
+        menu.remove_class("hidden")
+
+    def _hide_slash_menu(self) -> None:
+        menu = self.query_one("#slash-menu", OptionList)
+        menu.add_class("hidden")
+        self._visible_slash_commands = []
+
+    def _slash_menu_visible(self) -> bool:
+        return "hidden" not in self.query_one("#slash-menu", OptionList).classes
+
+    def _selected_slash_command(self) -> str | None:
+        menu = self.query_one("#slash-menu", OptionList)
+        highlighted = menu.highlighted
+        if highlighted is None or highlighted >= len(menu.options):
+            return None
+        option = menu.options[highlighted]
+        return str(option.prompt)
+
+    def _apply_selected_slash_command(self) -> None:
+        selected = self._selected_slash_command()
+        if selected is None:
+            return
+        prompt = self.query_one("#prompt", Input)
+        prompt.value = selected
+        prompt.cursor_position = len(prompt.value)
+        self._hide_slash_menu()
+
+    def _update_slash_commands_from_payload(self, payload: dict[str, Any]) -> None:
+        event_items = payload.get("events")
+        if not isinstance(event_items, list):
+            return
+
+        commands: list[str] = []
+        for event in event_items:
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("type", "")).strip().lower()
+            if event_type not in {"slash_commands.updated", "slash.updated", "session.commands"}:
+                continue
+            source = event.get("commands") or event.get("slash_commands")
+            if isinstance(source, list):
+                commands.extend(str(item) for item in source if str(item).startswith("/"))
+
+        if not commands:
+            return
+        deduped = list(dict.fromkeys([*_DEFAULT_SLASH_COMMANDS, *commands]))
+        if deduped != self._slash_commands:
+            self._slash_commands = deduped
+            self.logger.debug(
+                "conversation.slash_commands.updated",
+                mode_name=self.mode_name,
+                command_count=len(self._slash_commands),
+            )
 
     async def _ask_permission(self, title: str, detail: str) -> str:
         loop = asyncio.get_running_loop()
