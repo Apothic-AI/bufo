@@ -41,7 +41,10 @@
   - New runtime logging tests for JSONL output + env/flag configuration.
 - Fixed drag-selection in conversation/terminal logs by introducing a selectable RichLog wrapper that emits selection offsets and supports selected-text extraction/highlighting.
 - Added regression coverage ensuring timeline logs expose mouse selection offsets (guards clipboard auto-copy behavior).
-- Full automated suite currently passing: 40 tests total.
+- Fixed runtime logging sink behavior so `--log-file` is created deterministically at startup (even at default warning level) and emits a `logging.configured` JSONL event.
+- Switched clipboard copy path to system clipboard via `pyperclip` with explicit fallback notification when a host clipboard backend is unavailable.
+- Added tests for log file creation at default level and clipboard success/fallback behavior.
+- Full automated suite currently passing: 42 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.

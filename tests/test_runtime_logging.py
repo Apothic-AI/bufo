@@ -11,6 +11,17 @@ from bufo.runtime_logging import configure_runtime_logging
 
 
 class RuntimeLoggingTests(unittest.TestCase):
+    def test_creates_log_file_at_default_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "runtime-default.jsonl"
+            logger = configure_runtime_logging(level="warning", log_file=path)
+            self.assertTrue(path.exists())
+            lines = path.read_text(encoding="utf-8").splitlines()
+            self.assertGreaterEqual(len(lines), 1)
+            payloads = [json.loads(line) for line in lines]
+            self.assertTrue(any(item["event"] == "logging.configured" for item in payloads))
+            self.assertEqual(logger.level, "warning")
+
     def test_writes_jsonl_and_filters_by_level(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "runtime.jsonl"

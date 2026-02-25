@@ -33,6 +33,11 @@ from bufo.telemetry import Telemetry, TelemetryEvent
 from bufo.version import __version__
 from bufo.version_check import check_for_update
 
+try:
+    import pyperclip
+except Exception:  # pragma: no cover - optional runtime fallback
+    pyperclip = None
+
 
 class BufoApp(App[None]):
     TITLE = "bufo"
@@ -374,16 +379,38 @@ class BufoApp(App[None]):
         if selected == self._last_copied_selection and (now - self._last_copied_at) < 0.5:
             return False
 
+        system_clipboard_ok = self._copy_to_system_clipboard(selected)
         self.copy_to_clipboard(selected)
         self._last_copied_selection = selected
         self._last_copied_at = now
-        self.notify("Copied selection to clipboard", severity="information")
+        if system_clipboard_ok:
+            self.notify("Copied selection to clipboard", severity="information")
+        else:
+            self.notify(
+                "Copied to app clipboard (system clipboard unavailable)",
+                severity="warning",
+            )
         get_runtime_logger().debug(
             "app.selection.copied",
             chars=len(selected),
             mode=self.current_mode,
+            system_clipboard=system_clipboard_ok,
         )
         return True
+
+    def _copy_to_system_clipboard(self, text: str) -> bool:
+        if pyperclip is None:
+            self.logger.warning("app.selection.copy.system_clipboard_unavailable", reason="pyperclip_missing")
+            return False
+        try:
+            pyperclip.copy(text)
+            return True
+        except Exception as exc:
+            self.logger.warning(
+                "app.selection.copy.system_clipboard_failed",
+                error=str(exc),
+            )
+            return False
 
 
 class AcpCommandApp(BufoApp):

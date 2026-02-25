@@ -360,11 +360,25 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test() as pilot:
             await self._launch_first_agent(app, pilot)
             app.screen.get_selected_text = lambda: "copied text"  # type: ignore[method-assign]
-            with patch.object(app, "notify") as notify_mock:
+            with patch("bufo.app.pyperclip.copy") as clipboard_copy, patch.object(app, "notify") as notify_mock:
                 self.assertTrue(app._copy_selected_text_with_notification())  # noqa: SLF001
                 self.assertFalse(app._copy_selected_text_with_notification())  # noqa: SLF001
             self.assertEqual(app.clipboard, "copied text")
+            clipboard_copy.assert_called_once_with("copied text")
             notify_mock.assert_called_once()
+
+    async def test_selection_copy_helper_degrades_when_system_clipboard_fails(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            await self._launch_first_agent(app, pilot)
+            app.screen.get_selected_text = lambda: "copied text"  # type: ignore[method-assign]
+            with patch("bufo.app.pyperclip.copy", side_effect=RuntimeError("clipboard error")), patch.object(app, "notify") as notify_mock:
+                self.assertTrue(app._copy_selected_text_with_notification())  # noqa: SLF001
+            self.assertEqual(app.clipboard, "copied text")
+            notify_mock.assert_called_once()
+            args, kwargs = notify_mock.call_args
+            self.assertIn("app clipboard", args[0])
+            self.assertEqual(kwargs.get("severity"), "warning")
 
     async def test_timeline_exposes_selection_offsets_for_mouse_drag(self) -> None:
         app = self._make_app()

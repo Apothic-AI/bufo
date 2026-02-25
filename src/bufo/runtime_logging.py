@@ -50,6 +50,13 @@ class RuntimeLogger:
     sink_path: Path
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
+    def __post_init__(self) -> None:
+        self.ensure_sink()
+
+    def ensure_sink(self) -> None:
+        self.sink_path.parent.mkdir(parents=True, exist_ok=True)
+        self.sink_path.touch(exist_ok=True)
+
     def enabled(self, level: str) -> bool:
         current = _LEVEL_VALUES.get(self.level, _LEVEL_VALUES["warning"])
         incoming = _LEVEL_VALUES.get(level, _LEVEL_VALUES["debug"])
@@ -67,7 +74,6 @@ class RuntimeLogger:
         }
         line = json.dumps(payload, sort_keys=True)
         with self._lock:
-            self.sink_path.parent.mkdir(parents=True, exist_ok=True)
             with self.sink_path.open("a", encoding="utf-8") as handle:
                 handle.write(line + "\n")
 
@@ -107,7 +113,8 @@ def configure_runtime_logging(
         _runtime_logger = _DisabledLogger()
     else:
         _runtime_logger = RuntimeLogger(level=effective_level, sink_path=effective_file)
-        _runtime_logger.info(
+        _runtime_logger.log(
+            effective_level,
             "logging.configured",
             configured_level=effective_level,
             sink_path=str(effective_file),
@@ -120,4 +127,3 @@ def get_runtime_logger() -> RuntimeLogger:
     if _runtime_logger is None:
         _runtime_logger = configure_runtime_logging()
     return _runtime_logger
-

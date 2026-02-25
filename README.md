@@ -70,7 +70,7 @@ bufo acp \
 uv run python -m unittest discover -s tests -v
 ```
 
-The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (40 tests).
+The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (42 tests).
 
 ## Notes
 
