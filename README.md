@@ -1,6 +1,6 @@
 # bufo
 
-`bufo` is a terminal-first, web-second orchestration framework for ACP-compatible AI agents.
+`bufo` is a terminal-first, web-second UI framework for ACP-compatible AI agents.
 
 It provides one Textual-based control plane for agent prompting, persistent shell execution, session resume, settings, and local metadata persistence.
 
