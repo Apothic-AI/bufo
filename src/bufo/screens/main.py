@@ -109,6 +109,7 @@ class MainScreen(Screen):
                     project_root=self.project_root,
                     settings=self.settings,
                     agent_identity=self.agent.identity,
+                    agent_name=self.agent.name,
                     agent_command=self.agent.command_for_platform("default"),
                     resume_session_id=self.resume_session_id,
                     mode_name=self.session.mode_name,

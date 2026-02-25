@@ -20,12 +20,14 @@ It provides one Textual-based control plane for agent prompting, persistent shel
 - JSON-RPC transport + ACP bridge for process-based agents over stdio.
 - ACP session-scoped compatibility for strict servers: negotiated `sessionId` is reused for prompt/mode/cancel calls.
 - ACP prompt payload shaping with text/resource blocks plus legacy fallback behavior.
+- ACP update normalization for both typed events and nested `sessionUpdate` payload variants (mode, commands, message chunks).
 - Permission modal workflow, diff rendering helpers, command risk analysis.
 - Project-scoped prompt/shell histories and XDG-based config/state/data layout.
 - Project tree panel with scanner + watchdog-driven auto refresh.
 - Session strip with per-session chat tabs and quick "New Session" entry.
 - Drag-selection in logs with auto-copy and in-app clipboard notification.
 - Structured JSONL runtime logging with CLI/env level gating.
+- Agent stderr lines are written to runtime logs (not rendered in the chat timeline).
 
 ## CLI
 
@@ -74,7 +76,7 @@ bufo acp \
 uv run python -m unittest discover -s tests -v
 ```
 
-The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (42 tests).
+The suite currently covers core persistence/protocol paths, ACP bridge compatibility, ACP update normalization, JSONL runtime logging, CLI integration, and end-to-end Textual app flows (47 tests).
 
 ## Notes
 

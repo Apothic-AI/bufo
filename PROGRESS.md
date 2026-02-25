@@ -28,7 +28,7 @@
   - 4 ACP bridge session-payload tests (`sessionId` capture + prompt block shaping).
   - Existing 4 core persistence/protocol tests retained.
 - Added strict-session regression test to ensure `session/new` followed by prompt always sends `sessionId` (covers the real `yolo-acp` failure mode: `Missing or invalid sessionId`).
-- Updated `README.md` to reflect current CLI surface, ACP session-scoped compatibility behavior, yolo-v2 ACP usage example, and canonical test command.
+- Updated `README.md` to reflect current CLI surface, ACP session-scoped compatibility behavior, and canonical test command.
 - Implemented UI/runtime fixes requested in current review:
   - Selection auto-copy on mouse selection with in-app "copied" notification.
   - Slash command popup suggestions with keyboard cycling and apply behavior.
@@ -44,12 +44,18 @@
 - Fixed runtime logging sink behavior so `--log-file` is created deterministically at startup (even at default warning level) and emits a `logging.configured` JSONL event.
 - Switched clipboard copy path to system clipboard via `pyperclip` with explicit fallback notification when a host clipboard backend is unavailable.
 - Added tests for log file creation at default level and clipboard success/fallback behavior.
-- Full automated suite currently passing: 42 tests total.
+- Fixed ACP UI compatibility issues seen with strict/nested ACP servers:
+  - Parsed nested `sessionUpdate` payloads (`agent_message_chunk`, `current_mode_update`, `available_commands_update`) into human-readable timeline output.
+  - Registered slash-command suggestions from `availableCommands` updates (with `/` prefix normalization).
+  - Displayed agent `name` in the conversation header instead of internal `identity` (`__custom__` no longer shown as label).
+  - Routed agent stderr to structured logs only (no stderr spam in the chat timeline).
+- Added regression tests covering nested ACP update parsing, custom agent name rendering, stderr timeline suppression, and yolo-style command/mode updates.
+- Full automated suite currently passing: 47 tests total.
 
 ## In Progress
 - Runtime hardening and UX polish for richer tool/diff timelines and broader ACP ecosystem compatibility.
 
 ## Next
 - Expand UI coverage tests (screen interaction, session navigation, permission/diff flows).
-- Add richer ACP event mapping for additional provider-specific payload variants.
+- Add richer ACP event mapping for additional provider-specific payload variants beyond current nested `sessionUpdate` coverage.
 - Improve web-serve command compatibility handling across textual-serve versions.

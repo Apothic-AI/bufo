@@ -355,6 +355,88 @@ class BufoAppE2ETests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("started", lines)
             self.assertIn("completed", lines)
 
+    async def test_custom_agent_uses_display_name_in_timeline_header(self) -> None:
+        app = self._make_app(
+            ad_hoc_agent_command="demo-agent --acp",
+            ad_hoc_agent_name="Demo ACP Agent",
+        )
+        async with app.run_test() as pilot:
+            app.post_message(LaunchAgent(agent_identity="__custom__", project_root=self.project_root))
+            await pilot.pause(0.25)
+            conversation = app.screen.query_one(Conversation)
+
+            lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("Agent:", lines)
+            self.assertIn("Demo ACP Agent", lines)
+            self.assertNotIn("[dim]Agent:[/dim] __custom__", lines)
+
+    async def test_provider_style_session_updates_are_rendered_and_commands_registered(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            await conversation._on_agent_event(  # noqa: SLF001
+                AgentEvent(
+                    type="session/update",
+                    payload={
+                        "sessionId": "sid-1",
+                        "update": {
+                            "sessionUpdate": "available_commands_update",
+                            "availableCommands": [
+                                {"name": "agent:mode"},
+                                {"name": "agent:global-memory"},
+                            ],
+                        },
+                    },
+                )
+            )
+            await conversation._on_agent_event(  # noqa: SLF001
+                AgentEvent(
+                    type="session/update",
+                    payload={
+                        "sessionId": "sid-1",
+                        "update": {
+                            "sessionUpdate": "current_mode_update",
+                            "currentModeId": "unrestricted",
+                        },
+                    },
+                )
+            )
+            await conversation._on_agent_event(  # noqa: SLF001
+                AgentEvent(
+                    type="session/update",
+                    payload={
+                        "sessionId": "sid-1",
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {"type": "text", "text": "Hello parsed"},
+                        },
+                    },
+                )
+            )
+
+            lines = "\n".join(conversation.timeline_entries)
+            self.assertIn("Slash Commands", lines)
+            self.assertIn("/agent:mode", lines)
+            self.assertIn("Mode", lines)
+            self.assertIn("unrestricted", lines)
+            self.assertIn("Hello parsed", lines)
+            self.assertNotIn("sessionUpdate=agent_message_chunk", lines)
+            self.assertIn("/agent:mode", conversation._slash_commands)  # noqa: SLF001
+
+    async def test_agent_stderr_is_logged_but_not_rendered_in_timeline(self) -> None:
+        app = self._make_app()
+        async with app.run_test() as pilot:
+            conversation = await self._launch_first_agent(app, pilot)
+            before = len(conversation.timeline_entries)
+            with patch.object(type(conversation.logger), "warning", autospec=True) as warning_mock:
+                await conversation._on_agent_event(  # noqa: SLF001
+                    AgentEvent(type="agent/stderr", payload={"text": "noisy stderr line\n"})
+                )
+            self.assertEqual(len(conversation.timeline_entries), before)
+            warning_mock.assert_called_once()
+            self.assertEqual(warning_mock.call_args.args[1], "conversation.agent_stderr")
+            self.assertEqual(warning_mock.call_args.kwargs["message"], "noisy stderr line")
+
     async def test_selection_copy_helper_copies_and_notifies(self) -> None:
         app = self._make_app()
         async with app.run_test() as pilot:

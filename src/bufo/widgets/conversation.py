@@ -66,6 +66,7 @@ class Conversation(Vertical):
         project_root: Path,
         settings: AppSettings,
         agent_identity: str,
+        agent_name: str,
         agent_command: str | None,
         resume_session_id: str | None = None,
         mode_name: str,
@@ -74,6 +75,7 @@ class Conversation(Vertical):
         self.project_root = project_root
         self.settings = settings
         self.agent_identity = agent_identity
+        self.agent_name = agent_name
         self.agent_command = agent_command
         self.resume_session_id = resume_session_id
         self.mode_name = mode_name
@@ -102,12 +104,13 @@ class Conversation(Vertical):
             "conversation.mounted",
             mode_name=self.mode_name,
             agent_identity=self.agent_identity,
+            agent_name=self.agent_name,
             project_root=str(self.project_root),
         )
         await self.shell.start()
         self._set_state("notready")
         self._write_line(f"[dim]Project:[/dim] {self.project_root}")
-        self._write_line(f"[dim]Agent:[/dim] {self.agent_identity}")
+        self._write_line(f"[dim]Agent:[/dim] {self.agent_name}")
 
         if self.agent_command:
             self.bridge = self.bridge_factory(
@@ -129,6 +132,7 @@ class Conversation(Vertical):
                 self.logger.info(
                     "conversation.bridge.connected",
                     agent_identity=self.agent_identity,
+                    agent_name=self.agent_name,
                     resume_session_id=self.resume_session_id,
                 )
             except Exception as exc:
@@ -346,7 +350,14 @@ class Conversation(Vertical):
 
         if event.type == "agent/stderr":
             text = event.payload.get("text", "")
-            self._write_line(f"[dim red]stderr:[/dim red] {text.rstrip()}")
+            if text.strip():
+                self.logger.warning(
+                    "conversation.agent_stderr",
+                    mode_name=self.mode_name,
+                    agent_identity=self.agent_identity,
+                    agent_name=self.agent_name,
+                    message=text.rstrip(),
+                )
             return
 
         self._write_line(f"[dim]{event.type}: {event.payload}[/dim]")
@@ -414,20 +425,39 @@ class Conversation(Vertical):
         self._hide_slash_menu()
 
     def _update_slash_commands_from_payload(self, payload: dict[str, Any]) -> None:
-        event_items = payload.get("events")
-        if not isinstance(event_items, list):
-            return
+        event_items: list[dict[str, Any]] = []
+        if isinstance(payload.get("events"), list):
+            event_items.extend(event for event in payload["events"] if isinstance(event, dict))
+        if isinstance(payload.get("update"), dict):
+            event_items.append(payload["update"])
+        if not event_items:
+            event_items.append(payload)
 
         commands: list[str] = []
         for event in event_items:
-            if not isinstance(event, dict):
-                continue
             event_type = str(event.get("type", "")).strip().lower()
-            if event_type not in {"slash_commands.updated", "slash.updated", "session.commands"}:
+            session_update = str(event.get("sessionUpdate", "")).strip().lower()
+
+            source: list[Any] | None = None
+            if event_type in {"slash_commands.updated", "slash.updated", "session.commands"}:
+                maybe = event.get("commands") or event.get("slash_commands")
+                if isinstance(maybe, list):
+                    source = maybe
+            elif session_update in {"available_commands_update", "slash_commands.updated", "session.commands"}:
+                maybe = event.get("availableCommands") or event.get("commands") or event.get("slash_commands")
+                if isinstance(maybe, list):
+                    source = maybe
+
+            if source is None:
                 continue
-            source = event.get("commands") or event.get("slash_commands")
-            if isinstance(source, list):
-                commands.extend(str(item) for item in source if str(item).startswith("/"))
+            for item in source:
+                if isinstance(item, dict):
+                    name = str(item.get("name", "")).strip()
+                else:
+                    name = str(item).strip()
+                if not name:
+                    continue
+                commands.append(name if name.startswith("/") else f"/{name}")
 
         if not commands:
             return

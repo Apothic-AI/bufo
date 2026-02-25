@@ -84,6 +84,47 @@ class SessionUpdateMappingTests(unittest.TestCase):
         self.assertIn("Plan", lines)
         self.assertTrue(any(event.state == "idle" for event in events))
 
+    def test_maps_nested_session_update_agent_message_chunk(self) -> None:
+        events = normalize_session_update(
+            {
+                "sessionId": "abc",
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {"type": "text", "text": "Hello from agent"},
+                },
+            }
+        )
+        self.assertEqual(events[0].text, "Hello from agent")
+
+    def test_maps_nested_session_update_mode_and_commands(self) -> None:
+        mode_events = normalize_session_update(
+            {
+                "sessionId": "abc",
+                "update": {
+                    "sessionUpdate": "current_mode_update",
+                    "currentModeId": "unrestricted",
+                },
+            }
+        )
+        command_events = normalize_session_update(
+            {
+                "sessionId": "abc",
+                "update": {
+                    "sessionUpdate": "available_commands_update",
+                    "availableCommands": [
+                        {"name": "agent:mode", "description": "Switch mode"},
+                        {"name": "agent:memory", "description": "Toggle memory"},
+                    ],
+                },
+            }
+        )
+
+        self.assertIn("Mode", mode_events[0].text)
+        self.assertIn("unrestricted", mode_events[0].text)
+        self.assertIn("Slash Commands", command_events[0].text)
+        self.assertIn("/agent:mode", command_events[0].text)
+        self.assertIn("/agent:memory", command_events[0].text)
+
 
 if __name__ == "__main__":
     unittest.main()

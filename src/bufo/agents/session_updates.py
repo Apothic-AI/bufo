@@ -33,10 +33,21 @@ def normalize_session_update(payload: dict[str, Any]) -> list[RenderEvent]:
 
 
 def _map_event(event: dict[str, Any], events: list[RenderEvent]) -> None:
+    nested = event.get("update")
+    if isinstance(nested, dict):
+        _map_event(nested, events)
+        if events:
+            return
+
     event_type = str(event.get("type", "")).strip().lower()
 
     if event_type:
         _map_typed_event(event_type, event, events)
+        return
+
+    session_update = str(event.get("sessionUpdate", event.get("session_update", ""))).strip().lower()
+    if session_update:
+        _map_session_update(session_update, event, events)
         return
 
     # Legacy / shorthand payloads used by various ACP implementations.
@@ -134,6 +145,42 @@ def _map_typed_event(event_type: str, event: dict[str, Any], events: list[Render
     events.append(RenderEvent(text=f"[dim]{event_type}: {_compact(event)}[/dim]"))
 
 
+def _map_session_update(session_update: str, event: dict[str, Any], events: list[RenderEvent]) -> None:
+    if session_update in {"agent_message_chunk", "agent.message.chunk"}:
+        text = _extract_text(event.get("content"))
+        if text:
+            events.append(RenderEvent(text=text))
+        return
+
+    if session_update in {"agent_message", "agent.message", "agent_message_completed"}:
+        text = (
+            _extract_text(event.get("content"))
+            or _extract_text(event.get("message"))
+            or _extract_text(event.get("text"))
+        )
+        if text is not None:
+            events.append(RenderEvent(text=f"[green]Agent:[/green] {_compact(text)}"))
+        return
+
+    if session_update in {"current_mode_update", "session_mode.updated", "mode.updated"}:
+        mode = event.get("currentModeId") or event.get("modeId") or event.get("mode")
+        if mode is not None:
+            events.append(RenderEvent(text=f"[blue]Mode:[/blue] {mode}"))
+        return
+
+    if session_update in {"available_commands_update", "slash_commands.updated", "session.commands"}:
+        commands = event.get("availableCommands") or event.get("commands") or event.get("slash_commands") or []
+        events.append(RenderEvent(text=f"[blue]Slash Commands:[/blue] {_render_commands(commands)}"))
+        return
+
+    maybe_state = event.get("state")
+    if isinstance(maybe_state, str) and maybe_state in _STATE_VALUES:
+        events.append(RenderEvent(text=f"[dim]state -> {maybe_state}[/dim]", state=maybe_state))
+        return
+
+    events.append(RenderEvent(text=f"[dim]{session_update}: {_compact(event)}[/dim]"))
+
+
 def _render_tool_event(tool: Any, fallback_status: str) -> list[RenderEvent]:
     if isinstance(tool, list):
         rendered: list[RenderEvent] = []
@@ -174,6 +221,43 @@ def _render_plan(plan: Any) -> str:
 
 def _render_sequence(values: Iterable[Any]) -> str:
     return " | ".join(_compact(value) for value in values)
+
+
+def _render_commands(values: Any) -> str:
+    if not isinstance(values, list):
+        return _compact(values)
+
+    normalized: list[str] = []
+    for value in values:
+        if isinstance(value, dict):
+            name = str(value.get("name", "")).strip()
+        else:
+            name = str(value).strip()
+        if not name:
+            continue
+        normalized.append(name if name.startswith("/") else f"/{name}")
+
+    if not normalized:
+        return "[]"
+    return _render_sequence(normalized)
+
+
+def _extract_text(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        text = value.get("text")
+        if isinstance(text, str):
+            return text
+        inner = value.get("content")
+        if inner is not None:
+            return _extract_text(inner)
+    if isinstance(value, list):
+        chunks = [_extract_text(item) for item in value]
+        filtered = [item for item in chunks if item]
+        if filtered:
+            return "".join(filtered)
+    return None
 
 
 def _compact(value: Any) -> str:
